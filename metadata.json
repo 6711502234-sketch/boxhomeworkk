@@ -1,0 +1,7 @@
+{
+  "name": "กล่องการบ้าน",
+  "description": "เว็บแอปพลิเคชันระบบกล่องการบ้าน สไตล์ภาพวาดลายเส้นการ์ตูน พร้อมระบบล็อกอินครู-นักเรียน ส่งงาน แบบทดสอบ สมุดคะแนน และมุมสะท้อน",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

@@ -1,0 +1,153 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: 'JaoTomato Thin';
+  src: local('JaoTomato Thin'), local('JaoTomato-Thin'), local('JaoTomatoThin'), local('JaoTomato'), local('เจ้ามะเขือเทศ'), local('เจ้ามะเขือเทศ Thin');
+  font-weight: 100 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JaoTomato';
+  src: local('JaoTomato'), local('JaoTomato Thin'), local('เจ้ามะเขือเทศ');
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+html {
+  font-size: 18px;
+}
+
+@layer base {
+  * {
+    font-family: 'JaoTomato Thin', 'JaoTomato', 'Jao Tomato', 'Mali', 'Itim', 'Gaegu', 'Patrick Hand', 'Charm', cursive, system-ui, sans-serif;
+  }
+
+  body {
+    font-family: 'JaoTomato Thin', 'JaoTomato', 'Jao Tomato', 'Mali', 'Itim', 'Gaegu', 'Patrick Hand', 'Charm', cursive, system-ui, sans-serif;
+    font-size: 1rem;
+    line-height: 1.6;
+    letter-spacing: 0.015em;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'JaoTomato Thin', 'JaoTomato', 'Jao Tomato', 'Mali', 'Itim', 'Gaegu', 'Patrick Hand', 'Charm', cursive, sans-serif;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  button, input, select, textarea {
+    font-family: 'JaoTomato Thin', 'JaoTomato', 'Jao Tomato', 'Mali', 'Itim', 'Gaegu', 'Patrick Hand', 'Charm', cursive, sans-serif;
+    font-size: 1rem;
+  }
+}
+
+/* Children Notebook paper patterns and sketch styles */
+.notebook-grid {
+  background-size: 26px 26px;
+  background-image: 
+    linear-gradient(to right, rgba(0, 0, 0, 0.045) 1.5px, transparent 1.5px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.045) 1.5px, transparent 1.5px);
+}
+
+.notebook-lines {
+  background-size: 100% 28px;
+  background-image: linear-gradient(to bottom, transparent 27px, #e2e8f0 27px);
+}
+
+.notebook-dots {
+  background-image: radial-gradient(rgba(0, 0, 0, 0.12) 1.5px, transparent 1.5px);
+  background-size: 20px 20px;
+}
+
+/* Hand-drawn Sketch Box Shadow & Hover Animations */
+.sketch-border {
+  border: 3px solid #18181b;
+  box-shadow: 4px 4px 0px #18181b;
+  transition: all 0.15s ease-in-out;
+}
+
+.sketch-border-lg {
+  border: 3.5px solid #18181b;
+  box-shadow: 6px 6px 0px #18181b;
+  transition: all 0.15s ease-in-out;
+}
+
+.sketch-btn {
+  border: 2.5px solid #18181b;
+  box-shadow: 3px 3px 0px #18181b;
+  transition: all 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.sketch-btn:hover:not(:disabled) {
+  transform: translate(-2px, -2px);
+  box-shadow: 5px 5px 0px #18181b;
+}
+
+.sketch-btn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0px #18181b;
+}
+
+.sketch-input {
+  border: 2.5px solid #18181b;
+  box-shadow: 2px 2px 0px #18181b inset;
+  outline: none;
+}
+
+.sketch-input:focus {
+  border-color: #0284c7;
+  box-shadow: 3px 3px 0px #0284c7 inset;
+}
+
+/* Washi tape visual effect */
+.washi-tape {
+  position: absolute;
+  height: 20px;
+  width: 90px;
+  background: rgba(253, 224, 71, 0.75);
+  border: 1px dashed rgba(0, 0, 0, 0.25);
+  transform: rotate(-3deg);
+  z-index: 10;
+}
+
+/* Children hand-drawn doodle badges and stickers */
+.doodle-stamp {
+  display: inline-block;
+  transform: rotate(-2deg);
+  border: 2px dashed #18181b;
+  border-radius: 12px;
+  padding: 4px 10px;
+  background-color: #fff9db;
+  font-weight: 700;
+}
+
+.doodle-underline {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 20' preserveAspectRatio='none'%3E%3Cpath d='M0,12 Q25,3 50,12 T100,12' fill='none' stroke='%23f59e0b' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-position: bottom;
+  background-size: 80px 10px;
+  padding-bottom: 5px;
+}
+
+.crayon-tag {
+  border: 2px solid #18181b;
+  box-shadow: 2px 2px 0px #18181b;
+  border-radius: 9999px;
+  padding: 2px 10px;
+  font-weight: 700;
+}
+
+/* Subtle hand-drawn wiggle effect */
+@keyframes doodle-float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-4px) rotate(1deg); }
+}
+
+.animate-doodle-float {
+  animation: doodle-float 3.5s ease-in-out infinite;
+}
+
+

@@ -1,0 +1,124 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile for teachers and students",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["student", "teacher"] },
+        "classRoom": { "type": "string" },
+        "studentNo": { "type": "string" },
+        "avatar": { "type": "string" },
+        "totalStars": { "type": "number" },
+        "studentIdCode": { "type": "string" },
+        "teacherIdCode": { "type": "string" },
+        "googleEmail": { "type": "string" },
+        "usernameOrEmail": { "type": "string" }
+      },
+      "required": ["id", "name", "role"]
+    },
+    "AssignmentTask": {
+      "title": "AssignmentTask",
+      "description": "Classroom assignment posted by teachers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "subject": { "type": "string" },
+        "description": { "type": "string" },
+        "targetClass": { "type": "string" },
+        "maxScore": { "type": "number" },
+        "dueDate": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "authorTeacher": { "type": "string" },
+        "attachmentName": { "type": "string" },
+        "attachmentLink": { "type": "string" },
+        "rewardStars": { "type": "number" }
+      },
+      "required": ["id", "title", "subject"]
+    },
+    "Homework": {
+      "title": "Homework",
+      "description": "Student homework submission",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "taskId": { "type": "string" },
+        "title": { "type": "string" },
+        "subject": { "type": "string" },
+        "description": { "type": "string" },
+        "link": { "type": "string" },
+        "attachedFileName": { "type": "string" },
+        "submittedAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentClass": { "type": "string" },
+        "studentAvatar": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "needs_fix"] },
+        "teacherScore": { "type": "number" },
+        "maxScore": { "type": "number" },
+        "teacherComment": { "type": "string" },
+        "earnedStars": { "type": "number" }
+      },
+      "required": ["id", "title", "studentId", "status"]
+    },
+    "TeacherEvaluation": {
+      "title": "TeacherEvaluation",
+      "description": "Student evaluation and feedback for teacher",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "topicId": { "type": "string" },
+        "topicTitle": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentClass": { "type": "string" },
+        "ratingStars": { "type": "number" },
+        "improvementText": { "type": "string" },
+        "recommendationText": { "type": "string" },
+        "submittedAt": { "type": "string" },
+        "isAnonymous": { "type": "boolean" }
+      },
+      "required": ["id", "studentId", "ratingStars"]
+    },
+    "TeacherReflectionTopic": {
+      "title": "TeacherReflectionTopic",
+      "description": "Reflection topic created by teachers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "promptQuestion": { "type": "string" },
+        "targetClass": { "type": "string" },
+        "authorTeacher": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Stores user profiles"
+    },
+    "/assignmentTasks/{taskId}": {
+      "schema": "AssignmentTask",
+      "description": "Teacher assignment tasks"
+    },
+    "/homeworks/{homeworkId}": {
+      "schema": "Homework",
+      "description": "Homework submitted by students"
+    },
+    "/evaluations/{evaluationId}": {
+      "schema": "TeacherEvaluation",
+      "description": "Evaluations submitted by students"
+    },
+    "/reflectionTopics/{topicId}": {
+      "schema": "TeacherReflectionTopic",
+      "description": "Reflection topics posted by teachers"
+    }
+  }
+}
