@@ -46,7 +46,7 @@ export const TeacherTopicModal: React.FC<TeacherTopicModalProps> = ({
       title: title.trim(),
       promptQuestion: promptQuestion.trim(),
       targetClass,
-      authorTeacher: currentUser.name || 'คุณครูผู้สอน',
+      authorTeacher: currentUser.name || 'คุณครู',
       teacherAvatar: currentUser.avatar || 'teacher-female-glasses',
       createdAt: initialTopic
         ? initialTopic.createdAt

@@ -283,7 +283,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       sr.studentIdCode,
       sr.classRoom || '',
     ]);
-    downloadCsvForGoogleSheets('กล่องการบ้าน_รายชื่อผู้สมัครนักเรียน', headers, rows);
+    downloadCsvForGoogleSheets('TaskHub_รายชื่อผู้สมัครนักเรียน', headers, rows);
     triggerStarBurst();
   };
 
@@ -304,7 +304,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       tr.subject,
       tr.email,
     ]);
-    downloadCsvForGoogleSheets('กล่องการบ้าน_รายชื่อผู้สมัครคุณครู', headers, rows);
+    downloadCsvForGoogleSheets('TaskHub_รายชื่อผู้สมัครคุณครู', headers, rows);
     triggerStarBurst();
   };
 
@@ -332,7 +332,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       s.quizCompletedCount ?? Object.keys(s.quizScores || {}).length,
       s.totalQuizScore ?? 0,
     ]);
-    downloadCsvForGoogleSheets('กล่องการบ้าน_สรุปคะแนนนักเรียน', headers, rows);
+    downloadCsvForGoogleSheets('TaskHub_สรุปคะแนนนักเรียน', headers, rows);
     triggerStarBurst();
   };
 
@@ -362,7 +362,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       h.submittedAt,
       h.teacherComment ?? h.feedback ?? '',
     ]);
-    downloadCsvForGoogleSheets('กล่องการบ้าน_รายการส่งการบ้าน', headers, rows);
+    downloadCsvForGoogleSheets('TaskHub_รายการส่งการบ้าน', headers, rows);
     triggerStarBurst();
   };
 
@@ -377,7 +377,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       e.maxScore,
       e.submittedAt,
     ]);
-    downloadCsvForGoogleSheets('กล่องการบ้าน_คะแนนแบบทดสอบ', headers, rows);
+    downloadCsvForGoogleSheets('TaskHub_คะแนนแบบทดสอบ', headers, rows);
     triggerStarBurst();
   };
 
@@ -395,7 +395,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
     ];
     const rows = evaluations.map((ev) => [
       ev.topicTitle || 'ทั่วไป',
-      ev.studentName,
+      ev.isAnonymous ? 'ส่งแบบไม่ระบุตัวตน' : ev.studentName,
       ev.studentClass,
       ev.ratingStars,
       ev.improvementText,
@@ -403,7 +403,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       ev.submittedAt,
       ev.teacherReply || '',
     ]);
-    downloadCsvForGoogleSheets('กล่องการบ้าน_มุมสะท้อนคิด', headers, rows);
+    downloadCsvForGoogleSheets('TaskHub_มุมสะท้อนคิด', headers, rows);
     triggerStarBurst();
   };
 

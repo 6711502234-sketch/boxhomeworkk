@@ -5,7 +5,7 @@ export const initialStickers: StickerAchievement[] = [
     id: 'first-step',
     name: 'First Step',
     thaiTitle: 'ผู้เริ่มต้นไฟแรง',
-    description: 'ส่งการบ้านชิ้นแรกเข้าสู่กล่องการบ้านเรียบร้อย',
+    description: 'ส่งการบ้านชิ้นแรกเข้าสู่ TaskHub เรียบร้อย',
     icon: '🌟',
     color: 'from-amber-200 to-yellow-400 border-amber-500',
     condition: 'ส่งการบ้านสำเร็จอย่างน้อย 1 ชิ้น',
@@ -55,7 +55,7 @@ export const initialStickers: StickerAchievement[] = [
   {
     id: 'homework-legend',
     name: 'Homework Legend',
-    thaiTitle: 'แชมป์กล่องการบ้าน',
+    thaiTitle: 'แชมป์ TaskHub',
     description: 'สุดยอดนักเรียนตัวอย่าง ส่งการบ้าน ทำควิซ และประเมินครบทุกเมนู',
     icon: '👑',
     color: 'from-amber-300 to-orange-400 border-orange-500',

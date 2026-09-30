@@ -35,7 +35,7 @@ export const getGoogleSheetsConfig = (): GoogleSheetsConfig => {
     webAppUrl: '',
     spreadsheetUrl: '',
     autoSync: false,
-    sheetName: 'กล่องการบ้าน_บันทึกคะแนน',
+    sheetName: 'TaskHub_บันทึกคะแนน',
     lastSyncStatus: 'idle',
   };
 };
@@ -310,7 +310,7 @@ export const testGoogleSheetsConnection = async (
 
     return {
       success: true,
-      message: 'ทดสอบเชื่อมต่อ Google Apps Script สำเร็จ! Web App พร้อมรับข้อมูลจากกล่องการบ้านแล้ว',
+      message: 'ทดสอบเชื่อมต่อ Google Apps Script สำเร็จ! Web App พร้อมรับข้อมูลจาก TaskHub แล้ว',
     };
   } catch (error: any) {
     return {
@@ -325,7 +325,7 @@ export const testGoogleSheetsConnection = async (
  */
 export const getGoogleAppsScriptTemplate = (): string => {
   return `// ========================================================
-// 📦 สคริปต์เชื่อมต่อ "กล่องการบ้าน" กับ Google Sheets
+// 📦 สคริปต์เชื่อมต่อ "TaskHub" กับ Google Sheets
 // วิธีติดตั้ง:
 // 1. เปิด Google Sheets ใหม่
 // 2. ไปที่เมนู "ส่วนขยาย" (Extensions) -> "Apps Script"
@@ -333,7 +333,7 @@ export const getGoogleAppsScriptTemplate = (): string => {
 // 4. กดปุ่ม "ทำให้ใช้งานได้" (Deploy) -> "การทำให้ใช้งานได้ใหม่" (New Deployment)
 // 5. เลือกประเภท: "เว็บแอป" (Web app)
 // 6. กำหนด "ผู้ที่มีสิทธิ์เข้าถึง" (Who has access) เป็น: "ทุกคน" (Anyone)
-// 7. คัดลอก URL เว็บแอปที่ได้ มาวางในแอพกล่องการบ้าน!
+// 7. คัดลอก URL เว็บแอปที่ได้ มาวางในแอพ TaskHub!
 // ========================================================
 
 function doPost(e) {
@@ -346,7 +346,7 @@ function doPost(e) {
     if (data.action === "ping") {
       return ContentService.createTextOutput(JSON.stringify({
         status: "success",
-        message: "เชื่อมต่อกับ Google Apps Script สำเร็จ! Web App พร้อมรับข้อมูลจากกล่องการบ้านแล้ว"
+        message: "เชื่อมต่อกับ Google Apps Script สำเร็จ! Web App พร้อมรับข้อมูลจาก TaskHub แล้ว"
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -433,7 +433,7 @@ function doPost(e) {
       data.evaluations.forEach(function(ev) {
         sheet4.appendRow([
           ev.topicTitle || "ทั่วไป",
-          ev.studentName || "ผู้ไม่ประสงค์ออกนาม",
+          ev.isAnonymous ? "ส่งแบบไม่ระบุตัวตน" : (ev.studentName || "ส่งแบบไม่ระบุตัวตน"),
           ev.studentClass || "",
           ev.ratingStars || 5,
           ev.improvementText || "",
@@ -501,7 +501,7 @@ function doPost(e) {
 function doGet(e) {
   return ContentService.createTextOutput(JSON.stringify({
     status: "online",
-    message: "Google Apps Script สำหรับกล่องการบ้านพร้อมทำงานแล้ว!"
+    message: "Google Apps Script สำหรับ TaskHub พร้อมทำงานแล้ว!"
   })).setMimeType(ContentService.MimeType.JSON);
 }`;
 };

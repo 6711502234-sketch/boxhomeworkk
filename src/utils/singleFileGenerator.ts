@@ -4,59 +4,44 @@ export const downloadStandaloneHtml = () => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>กล่องการบ้าน - Homework Box ม.3</title>
+  <title>TaskHub ม.3</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Charm:wght@400;700&family=Gaegu:wght@400;700&family=Itim&family=Mali:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;1,300;1,400&family=Patrick+Hand&family=Sriracha&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Mali:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;1,200;1,300;1,400&family=Itim&display=swap" rel="stylesheet">
   <style>
-    @font-face {
-      font-family: 'JaoTomato Thin';
-      src: local('JaoTomato Thin'), local('JaoTomato-Thin'), local('JaoTomatoThin'), local('JaoTomato'), local('เจ้ามะเขือเทศ'), local('เจ้ามะเขือเทศ Thin');
-      font-weight: 100 400;
-      font-style: normal;
-    }
-    @font-face {
-      font-family: 'JaoTomato';
-      src: local('JaoTomato'), local('JaoTomato Thin'), local('เจ้ามะเขือเทศ');
-      font-weight: 100 700;
-      font-style: normal;
-    }
-    html { font-size: 18px; }
-    * { font-family: 'JaoTomato Thin', 'JaoTomato', 'Jao Tomato', 'Mali', 'Itim', 'Gaegu', 'Patrick Hand', 'Charm', cursive, sans-serif; }
-    body { font-family: 'JaoTomato Thin', 'JaoTomato', 'Jao Tomato', 'Mali', 'Itim', 'Gaegu', 'Patrick Hand', 'Charm', cursive, sans-serif; background-color: #FFFDF5; color: #18181b; font-size: 1rem; line-height: 1.6; }
-    .sketch-border { border: 3px solid #18181b; box-shadow: 4px 4px 0px #18181b; }
-    .sketch-btn { border: 2.5px solid #18181b; box-shadow: 3px 3px 0px #18181b; transition: all 0.15s ease; cursor: pointer; }
-    .sketch-btn:hover { transform: translate(-2px, -2px); box-shadow: 5px 5px 0px #18181b; }
-    .washi-tape { position: absolute; height: 18px; width: 80px; background: rgba(253, 224, 71, 0.8); border: 1px dashed rgba(0,0,0,0.2); transform: rotate(-3deg); z-index: 10; }
+    html { font-size: 16px; }
+    * { font-family: 'JaoTomato Thin', 'JaoTomato', 'เจ้ามะเขือเทศ', 'Mali', 'Itim', system-ui, -apple-system, sans-serif; }
+    body { font-family: 'JaoTomato Thin', 'JaoTomato', 'เจ้ามะเขือเทศ', 'Mali', 'Itim', system-ui, -apple-system, sans-serif; background-color: #FFFDF5; color: #292524; font-size: 1.02rem; line-height: 1.6; }
+    .sketch-border { border: 1.5px solid #FCD34D; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgba(217, 119, 6, 0.08); }
+    .sketch-btn { border: 1.5px solid #F59E0B; border-radius: 0.75rem; transition: all 0.15s ease; cursor: pointer; }
+    .sketch-btn:hover { background-color: #FEF9C3; }
   </style>
 </head>
 <body class="p-4 md:p-8 max-w-6xl mx-auto min-h-screen">
   <!-- Header -->
-  <header class="bg-[#FEF08A] sketch-border rounded-[20px_12px_22px_14px] p-5 mb-6 relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-4">
-    <div class="washi-tape -top-2 left-8"></div>
-    <div class="flex items-center gap-3">
-      <div class="w-14 h-14 bg-amber-300 sketch-border rounded-2xl flex items-center justify-center text-3xl">📦</div>
-      <div>
-        <h1 class="text-2xl md:text-3xl font-black">กล่องการบ้าน</h1>
-        <p class="text-xs md:text-sm font-bold text-zinc-700">ระบบกล่องการบ้าน ม.3 สไตล์ภาพวาดการ์ตูน</p>
-      </div>
+  <header class="bg-white sketch-border p-5 mb-6 flex flex-col md:flex-row items-center justify-between gap-4 border-2 border-amber-300">
+    <div>
+      <h1 class="text-3xl sm:text-4xl font-medium text-stone-900 flex items-center">
+        <span>Task</span>
+        <span class="text-stone-900 bg-amber-400 px-3 py-0.5 rounded-xl ml-1.5 shadow-xs font-semibold">Hub</span>
+      </h1>
     </div>
     <div class="flex items-center gap-3">
-      <div class="bg-amber-100 px-4 py-2 sketch-border rounded-xl font-black text-amber-900 flex items-center gap-2">
-        <span class="text-xl animate-bounce">⭐</span>
+      <div class="bg-amber-50 px-4 py-2 sketch-border rounded-xl font-medium text-stone-900 flex items-center gap-2 border border-amber-300">
+        <span class="text-xl">★</span>
         <span id="star-counter">100 ดาว</span>
       </div>
     </div>
   </header>
 
-  <!-- Navigation Tabs: 4 requested tabs -->
+  <!-- Navigation Tabs: No icons, Yellow & White theme -->
   <div class="flex flex-wrap gap-2.5 mb-6">
-    <button onclick="switchTab('homework')" id="tab-homework" class="px-4 py-2 bg-amber-300 sketch-btn rounded-xl font-black text-sm">📦 ส่งงาน</button>
-    <button onclick="switchTab('quiz')" id="tab-quiz" class="px-4 py-2 bg-white sketch-btn rounded-xl font-bold text-sm">🧪 แบบทดสอบ</button>
-    <button onclick="switchTab('scorebook')" id="tab-scorebook" class="px-4 py-2 bg-white sketch-btn rounded-xl font-bold text-sm">📖 สมุดคะแนน</button>
-    <button onclick="switchTab('reflection')" id="tab-reflection" class="px-4 py-2 bg-white sketch-btn rounded-xl font-bold text-sm">💬 มุมสะท้อน</button>
+    <button onclick="switchTab('homework')" id="tab-homework" class="px-5 py-2.5 bg-amber-400 text-stone-900 sketch-btn font-medium text-sm">เพิ่มชิ้นงาน</button>
+    <button onclick="switchTab('quiz')" id="tab-quiz" class="px-5 py-2.5 bg-white text-stone-700 sketch-btn font-normal text-sm">แบบทดสอบ</button>
+    <button onclick="switchTab('scorebook')" id="tab-scorebook" class="px-5 py-2.5 bg-white text-stone-700 sketch-btn font-normal text-sm">สมุดคะแนน</button>
+    <button onclick="switchTab('reflection')" id="tab-reflection" class="px-5 py-2.5 bg-white text-stone-700 sketch-btn font-normal text-sm">มุมสะท้อน</button>
   </div>
 
   <!-- Content Container -->

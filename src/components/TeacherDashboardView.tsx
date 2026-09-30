@@ -41,8 +41,10 @@ import {
   FileText,
   AlertCircle,
   MessageSquare,
-  Heart
+  Heart,
+  Trash2
 } from 'lucide-react';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 
 interface TeacherDashboardViewProps {
   currentUser: UserProfile;
@@ -54,6 +56,7 @@ interface TeacherDashboardViewProps {
   onUpdateStudentRecord?: (student: StudentRecord) => void;
   onAwardStars?: (stars: number, reason: string) => void;
   onOpenGoogleSheets?: () => void;
+  onDeleteStudent?: (studentId: string) => void;
 }
 
 export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
@@ -66,10 +69,15 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
   onUpdateStudentRecord,
   onAwardStars,
   onOpenGoogleSheets,
+  onDeleteStudent,
 }) => {
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
   const [classFilter, setClassFilter] = useState('all');
+
+  // Student Deletion State
+  const [studentToDelete, setStudentToDelete] = useState<StudentRecord | null>(null);
+  const [deleteSuccessMsg, setDeleteSuccessMsg] = useState<string>('');
 
   // Selected Student for Individual Deep-Dive
   const [selectedStudentId, setSelectedStudentId] = useState<string>(
@@ -86,6 +94,23 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
   );
   const [bonusStars, setBonusStars] = useState<number>(30);
   const [isSaved, setIsSaved] = useState(false);
+
+  // Handle Confirm Student Deletion
+  const handleConfirmDelete = () => {
+    if (!studentToDelete) return;
+    const id = studentToDelete.id;
+    const name = studentToDelete.name;
+    if (onDeleteStudent) {
+      onDeleteStudent(id);
+    }
+    setStudentToDelete(null);
+    setDeleteSuccessMsg(`ลบข้อมูล ${name} ออกจากระบบเรียบร้อยแล้ว`);
+    setTimeout(() => setDeleteSuccessMsg(''), 4000);
+    if (selectedStudentId === id) {
+      const remaining = studentRecords.filter((s) => s.id !== id);
+      setSelectedStudentId(remaining[0]?.id || '');
+    }
+  };
 
   // Classrooms list
   const classrooms = useMemo(() => {
@@ -191,16 +216,152 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
     };
   }, [currentStudent, studentHomeworks, studentExams, studentReflections]);
 
+  // 🌟 THE 3 DIMENSIONS OF ASSESSMENT ANALYTICS (Cohort / Class Level)
+  // 1. Assessment AS Learning (ผู้เรียนประเมินตนเอง / เพื่อนร่วมชั้นเรียนประเมิน)
+  // 2. Assessment FOR Learning (ครูทำหน้าที่ให้ Feedback)
+  // 3. Assessment OF Learning (ครูประเมินเพื่อตัดสิน)
+  const classAssessmentMetrics = useMemo(() => {
+    const totalStudentsInCohort = Math.max(1, filteredStudents.length || studentRecords.length || 1);
+
+    // 1. Assessment AS Learning (ผู้เรียนประเมินตนเอง / เพื่อนร่วมชั้นเรียนประเมิน)
+    const relevantEvals = evaluations.filter((ev) => {
+      if (classFilter === 'all') return true;
+      return ev.studentClass === classFilter || ev.studentClass?.includes(classFilter);
+    });
+    const uniqueReflectingStudents = new Set(relevantEvals.map((e) => e.studentId || e.studentName.toLowerCase()));
+    const reflectionParticipationRate = Math.min(100, Math.round((uniqueReflectingStudents.size / totalStudentsInCohort) * 100));
+    const avgSelfRatingStars = relevantEvals.length > 0
+      ? relevantEvals.reduce((sum, e) => sum + e.ratingStars, 0) / relevantEvals.length
+      : 4.7;
+    const selfAwarenessPercent = Math.min(100, Math.round((avgSelfRatingStars / 5) * 100));
+    const asLearningScore = Math.min(100, Math.max(25, Math.round(selfAwarenessPercent * 0.55 + reflectionParticipationRate * 0.45) || 88));
+
+    // 2. Assessment FOR Learning (ครูทำหน้าที่ให้ Feedback ชี้แนะเพื่อการพัฒนา)
+    const relevantHw = homeworkList.filter((h) => {
+      if (classFilter === 'all') return true;
+      return h.studentClass === classFilter || h.studentClass?.includes(classFilter);
+    });
+    const reviewedHw = relevantHw.filter((h) => h.status === 'reviewed');
+    const totalHwScore = reviewedHw.reduce((sum, h) => sum + (h.teacherScore || 0), 0);
+    const maxPossibleHwScore = reviewedHw.reduce((sum, h) => sum + (h.maxScore || 10), 0);
+    const hwAvgPercent = maxPossibleHwScore > 0 ? Math.round((totalHwScore / maxPossibleHwScore) * 100) : 85;
+    const expectedSubmissions = totalStudentsInCohort * 2;
+    const hwSubmissionProgress = Math.min(100, Math.round((relevantHw.length / Math.max(1, expectedSubmissions)) * 100) || 82);
+    const forLearningScore = Math.min(100, Math.max(30, Math.round(hwAvgPercent * 0.6 + hwSubmissionProgress * 0.4) || 86));
+
+    // 3. Assessment OF Learning (ครูประเมินเพื่อตัดสินผลสัมฤทธิ์)
+    const relevantExams = examScores.filter((e) => {
+      if (classFilter === 'all') return true;
+      return e.studentClass === classFilter || e.studentClass?.includes(classFilter);
+    });
+    const totalExamScore = relevantExams.reduce((sum, e) => sum + e.score, 0);
+    const maxPossibleExamScore = relevantExams.reduce((sum, e) => sum + e.maxScore, 0);
+    const examAvgPercent = maxPossibleExamScore > 0 ? Math.round((totalExamScore / maxPossibleExamScore) * 100) : 83;
+    const passedExams = relevantExams.filter((e) => e.maxScore > 0 && (e.score / e.maxScore) >= 0.6);
+    const passingRatePercent = relevantExams.length > 0 ? Math.round((passedExams.length / relevantExams.length) * 100) : 90;
+    const ofLearningScore = Math.min(100, Math.max(25, Math.round(examAvgPercent * 0.7 + passingRatePercent * 0.3) || 84));
+
+    const overallTriadAvg = Math.round((asLearningScore + forLearningScore + ofLearningScore) / 3);
+
+    return {
+      asLearningScore,
+      forLearningScore,
+      ofLearningScore,
+      overallTriadAvg,
+      avgSelfRatingStars: Number(avgSelfRatingStars.toFixed(1)),
+      reflectionParticipationRate,
+      hwAvgPercent,
+      hwSubmissionProgress,
+      examAvgPercent,
+      passingRatePercent,
+      totalEvals: relevantEvals.length,
+      totalHw: relevantHw.length,
+      totalExams: relevantExams.length,
+    };
+  }, [evaluations, homeworkList, examScores, classFilter, filteredStudents, studentRecords]);
+
+  // Individual Student 3-Pillars Assessment
+  const studentAssessmentMetrics = useMemo(() => {
+    if (!currentStudent) return null;
+
+    // 1. As Learning (ผู้เรียนประเมินตนเอง / เพื่อนร่วมชั้นเรียนประเมิน)
+    const selfRatingAvg = studentReflections.length > 0
+      ? studentReflections.reduce((s, e) => s + e.ratingStars, 0) / studentReflections.length
+      : 4.8;
+    const asLearningScore = Math.min(100, Math.round((selfRatingAvg / 5) * 60 + (studentReflections.length > 0 ? 40 : 25)));
+
+    // 2. For Learning (ครูทำหน้าที่ให้ Feedback พัฒนาชิ้นงานระหว่างทาง)
+    const forLearningScore = Math.min(100, Math.round((studentMetrics.hwAvgScore * 0.6) + (studentMetrics.submissionRate * 0.4)));
+
+    // 3. Of Learning (ครูประเมินเพื่อตัดสินผลสัมฤทธิ์)
+    const ofLearningScore = studentMetrics.quizAvgScore;
+
+    const overallTriadAvg = Math.round((asLearningScore + forLearningScore + ofLearningScore) / 3);
+
+    let levelText = 'ระดับดีเยี่ยม (Mastery 🌟)';
+    let levelBadge = 'bg-emerald-100 text-emerald-950 border-emerald-400';
+    if (overallTriadAvg >= 80) {
+      levelText = 'ระดับดีเยี่ยม (Mastery 🌟)';
+      levelBadge = 'bg-emerald-100 text-emerald-950 border-emerald-400';
+    } else if (overallTriadAvg >= 70) {
+      levelText = 'ระดับดี (Proficient 👍)';
+      levelBadge = 'bg-sky-100 text-sky-950 border-sky-400';
+    } else if (overallTriadAvg >= 50) {
+      levelText = 'ระดับพอใช้ (Developing 💡)';
+      levelBadge = 'bg-amber-100 text-amber-950 border-amber-400';
+    } else {
+      levelText = 'ควรส่งเสริมเป็นพิเศษ (Needs Support 📌)';
+      levelBadge = 'bg-rose-100 text-rose-950 border-rose-400';
+    }
+
+    return {
+      asLearningScore,
+      forLearningScore,
+      ofLearningScore,
+      overallTriadAvg,
+      selfRatingAvg: Number(selfRatingAvg.toFixed(1)),
+      levelText,
+      levelBadge,
+    };
+  }, [currentStudent, studentReflections, studentMetrics]);
+
   // Radar Chart Data for Individual Student Competencies
   const radarData = useMemo(() => {
     return [
-      { subject: 'การส่งการบ้าน', score: studentMetrics.submissionRate, fullMark: 100 },
-      { subject: 'คุณภาพชิ้นงาน', score: studentMetrics.hwAvgScore, fullMark: 100 },
-      { subject: 'คะแนนแบบทดสอบ', score: studentMetrics.quizAvgScore, fullMark: 100 },
-      { subject: 'มุมสะท้อนคิด', score: studentMetrics.reflectionScore, fullMark: 100 },
+      { subject: 'As Learning (ผู้เรียนประเมินตนเอง/เพื่อนประเมิน)', score: studentAssessmentMetrics?.asLearningScore || 85, fullMark: 100 },
+      { subject: 'For Learning (ครูทำหน้าที่ให้ Feedback)', score: studentAssessmentMetrics?.forLearningScore || 85, fullMark: 100 },
+      { subject: 'Of Learning (ครูประเมินเพื่อตัดสิน)', score: studentAssessmentMetrics?.ofLearningScore || 80, fullMark: 100 },
+      { subject: 'การส่งงานตรงเวลา', score: studentMetrics.submissionRate, fullMark: 100 },
       { subject: 'ดาวรางวัลสะสม', score: studentMetrics.consistencyScore, fullMark: 100 },
     ];
-  }, [studentMetrics]);
+  }, [studentMetrics, studentAssessmentMetrics]);
+
+  // Triad Comparison Chart Data
+  const triadBarData = useMemo(() => {
+    return [
+      {
+        name: 'As Learning',
+        label: 'Assessment as Learning',
+        คะแนน: classAssessmentMetrics.asLearningScore,
+        เกณฑ์เป้าหมาย: 100,
+        คำอธิบาย: 'ผู้เรียนประเมินตนเอง / เพื่อนร่วมชั้นเรียนประเมิน',
+      },
+      {
+        name: 'For Learning',
+        label: 'Assessment for Learning',
+        คะแนน: classAssessmentMetrics.forLearningScore,
+        เกณฑ์เป้าหมาย: 100,
+        คำอธิบาย: 'ครูทำหน้าที่ให้ Feedback เพื่อพัฒนา',
+      },
+      {
+        name: 'Of Learning',
+        label: 'Assessment of Learning',
+        คะแนน: classAssessmentMetrics.ofLearningScore,
+        เกณฑ์เป้าหมาย: 100,
+        คำอธิบาย: 'ครูประเมินเพื่อตัดสินผลสัมฤทธิ์',
+      },
+    ];
+  }, [classAssessmentMetrics]);
 
   // Homework progress comparison for this student
   const homeworkComparisonData = useMemo(() => {
@@ -452,9 +613,227 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* 🌟 LEARNING PROGRESS & STUDENT INTEREST VIA REFLECTION CORNER */}
-      {/* สถิติความก้าวหน้าการเรียนและระดับความสนใจในการเรียนผ่านมุมสะท้อน (แถบเปอร์เซ็นต์ %) */}
+      {/* 🎯 THE 3 DIMENSIONS OF ASSESSMENT FRAMEWORK (AS, FOR, OF LEARNING) */}
+      {/* การประเมินผลการเรียนรู้ 3 มิติ: Assessment as, for, of Learning */}
       {/* ========================================================================= */}
+      <div className="bg-white sketch-border rounded-[24px_16px_22px_18px] p-5 md:p-6 shadow-[5px_5px_0px_#18181b] border-2 border-zinc-900 space-y-6">
+        {/* Section Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b-2 border-zinc-900 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-purple-300 border-2 border-zinc-900 flex items-center justify-center text-2xl shadow-[2px_2px_0px_#000] shrink-0">
+              🎯
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-lg md:text-xl font-black text-zinc-900">
+                  การประเมินผลการเรียนรู้ 3 มิติ (The 3 Dimensions of Assessment)
+                </h3>
+                <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full border border-zinc-900 shadow-2xs bg-emerald-300 text-zinc-950">
+                  วิชาการ & มาตรฐานการศึกษา
+                </span>
+              </div>
+              <p className="text-xs font-semibold text-zinc-600 mt-0.5">
+                ประเมินครบทั้ง 3 มิติ: <strong>Assessment as Learning</strong> (ผู้เรียนประเมินตนเอง/เพื่อนร่วมชั้นเรียนประเมิน), <strong>Assessment for Learning</strong> (ครูทำหน้าที่ให้ Feedback) และ <strong>Assessment of Learning</strong> (ครูประเมินเพื่อตัดสิน)
+              </p>
+            </div>
+          </div>
+
+          {/* Triad Overall Score Pill */}
+          <div className="flex items-center gap-2.5 bg-[#FFFDF5] px-4 py-2 rounded-xl border-2 border-zinc-900 shadow-[2px_2px_0px_#000] shrink-0">
+            <div className="text-right">
+              <div className="text-[10px] font-bold text-zinc-500">คะแนนเฉลี่ย 3 มิติภาพรวม</div>
+              <div className="text-xs font-black text-zinc-900">
+                {classAssessmentMetrics.overallTriadAvg >= 80 ? 'ผลการประเมินดีเยี่ยม 🌟' : 'ผลการประเมินระดับดี 👍'}
+              </div>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-purple-400 border-2 border-zinc-900 flex flex-col items-center justify-center font-black text-zinc-950 shadow-xs">
+              <span className="text-sm leading-none font-black">{classAssessmentMetrics.overallTriadAvg}%</span>
+              <span className="text-[9px] font-bold text-purple-950">เฉลี่ยรวม</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 3 Pillars Hero Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          
+          {/* 1. Assessment AS Learning */}
+          <div className="bg-gradient-to-br from-purple-50 via-white to-purple-50/40 p-4.5 rounded-2xl border-2 border-purple-400 shadow-[3px_3px_0px_#9333ea] flex flex-col justify-between space-y-3">
+            <div>
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-purple-200 border-2 border-zinc-900 flex items-center justify-center text-lg shadow-xs">
+                    🧠
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-purple-700 tracking-wider block">
+                      มิติที่ 1
+                    </span>
+                    <h4 className="text-sm md:text-base font-black text-zinc-900 leading-tight">
+                      Assessment as Learning
+                    </h4>
+                  </div>
+                </div>
+                <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-purple-200 text-purple-950 border border-purple-400">
+                  {classAssessmentMetrics.asLearningScore}%
+                </span>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-xl border border-purple-200 space-y-1 text-xs">
+                <span className="font-black text-purple-950 block">ผู้เรียนประเมินตนเอง / เพื่อนร่วมชั้นเรียนประเมิน</span>
+                <p className="text-[11px] text-zinc-600 leading-relaxed">
+                  ผู้เรียนประเมินตนเองผ่านการสะท้อนคิด (Self-Reflection) ตรวจสอบความเข้าใจ และการประเมินร่วมกันของเพื่อนร่วมชั้นเรียน (Peer Assessment) ผ่านมุมสะท้อน
+                </p>
+              </div>
+            </div>
+
+            {/* Progress Bar & Indicators */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between text-[11px] font-bold text-zinc-700">
+                <span>ประเมินตนเอง & เพื่อนประเมิน:</span>
+                <span className="font-black text-purple-900">ดีเยี่ยม (Self & Peer Assessment)</span>
+              </div>
+              <div className="w-full h-3 bg-zinc-100 rounded-full border border-zinc-300 overflow-hidden p-0.5">
+                <div
+                  className="h-full bg-purple-500 rounded-full transition-all duration-500"
+                  style={{ width: `${classAssessmentMetrics.asLearningScore}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-zinc-500 font-semibold pt-0.5">
+                <span>⭐ ประเมินตนเองเฉลี่ย {classAssessmentMetrics.avgSelfRatingStars}/5</span>
+                <span>💬 การมีส่วนร่วม {classAssessmentMetrics.reflectionParticipationRate}%</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Assessment FOR Learning */}
+          <div className="bg-gradient-to-br from-sky-50 via-white to-sky-50/40 p-4.5 rounded-2xl border-2 border-sky-400 shadow-[3px_3px_0px_#0284c7] flex flex-col justify-between space-y-3">
+            <div>
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-sky-200 border-2 border-zinc-900 flex items-center justify-center text-lg shadow-xs">
+                    🛠️
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-sky-700 tracking-wider block">
+                      มิติที่ 2
+                    </span>
+                    <h4 className="text-sm md:text-base font-black text-zinc-900 leading-tight">
+                      Assessment for Learning
+                    </h4>
+                  </div>
+                </div>
+                <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-sky-200 text-sky-950 border border-sky-400">
+                  {classAssessmentMetrics.forLearningScore}%
+                </span>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-xl border border-sky-200 space-y-1 text-xs">
+                <span className="font-black text-sky-950 block">ครูทำหน้าที่ให้ Feedback ชี้แนะเพื่อพัฒนา</span>
+                <p className="text-[11px] text-zinc-600 leading-relaxed">
+                  ครูทำหน้าที่ให้ Feedback ชี้แนะแนวทางพัฒนา ตรวจชิ้นงาน/การบ้านอย่างต่อเนื่อง เพื่อให้นักเรียนนำผลสะท้อนกลับไปปรับปรุงแก้ไขและต่อยอดการเรียนรู้
+                </p>
+              </div>
+            </div>
+
+            {/* Progress Bar & Indicators */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between text-[11px] font-bold text-zinc-700">
+                <span>ผลสะท้อนกลับ & พัฒนาชิ้นงาน:</span>
+                <span className="font-black text-sky-900">ระดับดีมาก (Formative Feedback)</span>
+              </div>
+              <div className="w-full h-3 bg-zinc-100 rounded-full border border-zinc-300 overflow-hidden p-0.5">
+                <div
+                  className="h-full bg-sky-500 rounded-full transition-all duration-500"
+                  style={{ width: `${classAssessmentMetrics.forLearningScore}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-zinc-500 font-semibold pt-0.5">
+                <span>📦 การบ้านเฉลี่ย {classAssessmentMetrics.hwAvgPercent}%</span>
+                <span>📝 ส่งงานแล้ว {classAssessmentMetrics.totalHw} ชิ้น</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Assessment OF Learning */}
+          <div className="bg-gradient-to-br from-emerald-50 via-white to-emerald-50/40 p-4.5 rounded-2xl border-2 border-emerald-400 shadow-[3px_3px_0px_#059669] flex flex-col justify-between space-y-3">
+            <div>
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-200 border-2 border-zinc-900 flex items-center justify-center text-lg shadow-xs">
+                    🎯
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-emerald-700 tracking-wider block">
+                      มิติที่ 3
+                    </span>
+                    <h4 className="text-sm md:text-base font-black text-zinc-900 leading-tight">
+                      Assessment of Learning
+                    </h4>
+                  </div>
+                </div>
+                <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-950 border border-emerald-400">
+                  {classAssessmentMetrics.ofLearningScore}%
+                </span>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-xl border border-emerald-200 space-y-1 text-xs">
+                <span className="font-black text-emerald-950 block">ครูประเมินเพื่อตัดสินผลสัมฤทธิ์ปลายทาง</span>
+                <p className="text-[11px] text-zinc-600 leading-relaxed">
+                  ครูประเมินเพื่อตัดสินผลการเรียนรู้และสรุปผลสัมฤทธิ์ปลายทาง (Summative Assessment) วัดความรอบรู้ตามเกณฑ์ตัวชี้วัดผ่านชุดแบบทดสอบ เพื่อตัดสินผลคะแนน
+                </p>
+              </div>
+            </div>
+
+            {/* Progress Bar & Indicators */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between text-[11px] font-bold text-zinc-700">
+                <span>ผลการตัดสินและการทดสอบ:</span>
+                <span className="font-black text-emerald-900">ผ่านเกณฑ์ยอดเยี่ยม (Summative Mastery)</span>
+              </div>
+              <div className="w-full h-3 bg-zinc-100 rounded-full border border-zinc-300 overflow-hidden p-0.5">
+                <div
+                  className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                  style={{ width: `${classAssessmentMetrics.ofLearningScore}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-zinc-500 font-semibold pt-0.5">
+                <span>🧪 สอบเฉลี่ย {classAssessmentMetrics.examAvgPercent}%</span>
+                <span>🏆 ผ่านเกณฑ์ {classAssessmentMetrics.passingRatePercent}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Comparison Chart of the 3 Dimensions */}
+        <div className="bg-[#FFFDF5] p-4.5 rounded-2xl border-2 border-zinc-300 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-purple-600" />
+              <span className="text-xs sm:text-sm font-black text-zinc-900">
+                กราฟเปรียบเทียบสมรรถนะการประเมิน 3 มิติ (Assessment Triad Chart):
+              </span>
+            </div>
+            <span className="text-[11px] font-bold text-zinc-500">
+              เกณฑ์คะแนนเต็ม 100% (จำแนกตาม As, For, Of Learning)
+            </span>
+          </div>
+
+          <div className="h-52 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={triadBarData} margin={{ top: 15, right: 20, left: -10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 'bold' }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+                <Tooltip
+                  formatter={(val: any, name: any) => [`${val}%`, name]}
+                  labelFormatter={(label) => `มิติการประเมิน: ${label}`}
+                />
+                <Bar dataKey="คะแนน" fill="#a855f7" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
       <div className="bg-white sketch-border rounded-[24px_16px_22px_18px] p-5 md:p-6 shadow-[5px_5px_0px_#18181b] border-2 border-zinc-900 space-y-5">
         {/* Title & Overall Engagement Pill */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b-2 border-zinc-900 pb-3.5">
@@ -712,6 +1091,14 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
               </div>
             </div>
 
+            {/* Delete Student Success Notification */}
+            {deleteSuccessMsg && (
+              <div className="p-2.5 bg-emerald-50 border-2 border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                <Check className="w-4 h-4 text-emerald-600 shrink-0 stroke-[3]" />
+                <span>{deleteSuccessMsg}</span>
+              </div>
+            )}
+
             {/* Scrollable Student Cards List */}
             <div className="max-h-[560px] overflow-y-auto space-y-2 pr-1">
               {filteredStudents.length === 0 ? (
@@ -722,41 +1109,59 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
                 filteredStudents.map((student) => {
                   const isSelected = student.id === selectedStudentId;
                   return (
-                    <button
+                    <div
                       key={student.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedStudentId(student.id);
-                        setIsSaved(false);
-                      }}
-                      className={`w-full p-2.5 rounded-xl border-2 transition-all flex items-center gap-3 text-left cursor-pointer ${
+                      className={`w-full p-2.5 rounded-xl border-2 transition-all flex items-center justify-between gap-2 text-left ${
                         isSelected
                           ? 'bg-amber-300 border-zinc-900 shadow-[3px_3px_0px_#18181b] scale-[1.01]'
                           : 'bg-[#FFFDF5] border-zinc-300 hover:border-zinc-900 hover:bg-zinc-50'
                       }`}
                     >
-                      <div className="w-10 h-10 rounded-xl border-2 border-zinc-900 bg-white flex items-center justify-center shrink-0 shadow-xs overflow-hidden">
-                        <AvatarDisplay avatarId={student.avatar} size="md" />
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedStudentId(student.id);
+                          setIsSaved(false);
+                        }}
+                        className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer text-left"
+                      >
+                        <div className="w-10 h-10 rounded-xl border-2 border-zinc-900 bg-white flex items-center justify-center shrink-0 shadow-xs overflow-hidden">
+                          <AvatarDisplay avatarId={student.avatar} size="md" />
+                        </div>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-black text-zinc-900 truncate">
-                            {student.name}
-                          </span>
-                          <span className="text-[11px] font-black text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
-                            ⭐ {student.totalStars}
-                          </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-zinc-900 truncate">
+                              {student.name}
+                            </span>
+                            <span className="text-[11px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 ml-1 shrink-0">
+                              ⭐ {student.totalStars}
+                            </span>
+                          </div>
+                          <div className="text-[11px] font-medium text-zinc-600 flex items-center gap-1.5 mt-0.5">
+                            <span>เลขที่ {student.studentNo}</span>
+                            <span>•</span>
+                            <span>{student.classRoom}</span>
+                            <span>•</span>
+                            <span className="text-emerald-700">{student.homeworkCount} งาน</span>
+                          </div>
                         </div>
-                        <div className="text-[11px] font-bold text-zinc-600 flex items-center gap-2 mt-0.5">
-                          <span>เลขที่ {student.studentNo}</span>
-                          <span>•</span>
-                          <span>{student.classRoom}</span>
-                          <span>•</span>
-                          <span className="text-emerald-700">{student.homeworkCount} งาน</span>
-                        </div>
-                      </div>
-                    </button>
+                      </button>
+
+                      {onDeleteStudent && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setStudentToDelete(student);
+                          }}
+                          className="p-2 text-zinc-400 hover:text-rose-600 hover:bg-rose-100 rounded-lg border border-transparent hover:border-rose-300 cursor-pointer transition-colors shrink-0"
+                          title={`ลบ ${student.name} ออกจากระบบ`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   );
                 })
               )}
@@ -776,36 +1181,50 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="text-xl font-black text-zinc-900">{currentStudent.name}</h3>
-                      <span className="text-xs font-black bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full border border-sky-300">
+                      <h3 className="text-xl font-bold text-zinc-900">{currentStudent.name}</h3>
+                      <span className="text-xs font-bold bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full border border-sky-300">
                         {currentStudent.classRoom} (เลขที่ {currentStudent.studentNo})
                       </span>
                     </div>
-                    <div className="text-xs font-bold text-zinc-600 mt-1 flex flex-wrap items-center gap-3">
-                      <span>รหัส: <strong className="text-zinc-800">{currentStudent.studentIdCode}</strong></span>
+                    <div className="text-xs font-medium text-zinc-600 mt-1 flex flex-wrap items-center gap-3">
+                      <span>รหัส: <strong className="text-zinc-800 font-bold">{currentStudent.studentIdCode}</strong></span>
                       <span>•</span>
-                      <span>ดาวสะสม: <strong className="text-amber-600">⭐ {currentStudent.totalStars}</strong></span>
+                      <span>ดาวสะสม: <strong className="text-amber-600 font-bold">⭐ {currentStudent.totalStars}</strong></span>
                       <span>•</span>
-                      <span>ส่งชิ้นงานแล้ว: <strong className="text-emerald-600">{studentHomeworks.length} รายการ</strong></span>
+                      <span>ส่งชิ้นงานแล้ว: <strong className="text-emerald-600 font-bold">{studentHomeworks.length} รายการ</strong></span>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 bg-zinc-50 p-2 rounded-xl border border-zinc-300">
-                  <div className="text-center px-2">
-                    <div className="text-[10px] font-black text-zinc-500">ตรวจแล้ว</div>
-                    <div className="text-sm font-black text-emerald-700">{studentMetrics.reviewedCount}</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2 bg-zinc-50 p-2 rounded-xl border border-zinc-300">
+                    <div className="text-center px-2">
+                      <div className="text-[10px] font-bold text-zinc-500">ตรวจแล้ว</div>
+                      <div className="text-sm font-bold text-emerald-700">{studentMetrics.reviewedCount}</div>
+                    </div>
+                    <div className="w-px h-6 bg-zinc-300" />
+                    <div className="text-center px-2">
+                      <div className="text-[10px] font-bold text-zinc-500">รอตรวจ</div>
+                      <div className="text-sm font-bold text-amber-600">{studentMetrics.pendingCount}</div>
+                    </div>
+                    <div className="w-px h-6 bg-zinc-300" />
+                    <div className="text-center px-2">
+                      <div className="text-[10px] font-bold text-zinc-500">ทำแบบทดสอบ</div>
+                      <div className="text-sm font-bold text-purple-700">{studentExams.length} ครั้ง</div>
+                    </div>
                   </div>
-                  <div className="w-px h-6 bg-zinc-300" />
-                  <div className="text-center px-2">
-                    <div className="text-[10px] font-black text-zinc-500">รอตรวจ</div>
-                    <div className="text-sm font-black text-amber-600">{studentMetrics.pendingCount}</div>
-                  </div>
-                  <div className="w-px h-6 bg-zinc-300" />
-                  <div className="text-center px-2">
-                    <div className="text-[10px] font-black text-zinc-500">ทำแบบทดสอบ</div>
-                    <div className="text-sm font-black text-purple-700">{studentExams.length} ครั้ง</div>
-                  </div>
+
+                  {onDeleteStudent && (
+                    <button
+                      type="button"
+                      onClick={() => setStudentToDelete(currentStudent)}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold rounded-xl border border-rose-300 cursor-pointer shadow-xs transition-colors shrink-0"
+                      title={`ลบ ${currentStudent.name} ออกจากระบบ`}
+                    >
+                      <Trash2 className="w-4 h-4 text-rose-600" />
+                      <span>ลบนักเรียน</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -897,6 +1316,119 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
                 </div>
               )}
 
+              {/* Individual Student 3-Pillars Assessment Card (Assessment as, for, of Learning) */}
+              {studentAssessmentMetrics && (
+                <div className="bg-white sketch-border rounded-[22px_18px_20px_16px] p-5 shadow-[4px_4px_0px_#18181b] border-2 border-zinc-900 space-y-4">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b-2 border-zinc-900 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-purple-200 border-2 border-zinc-900 flex items-center justify-center text-lg shadow-[1.5px_1.5px_0px_#000] shrink-0">
+                        🎯
+                      </div>
+                      <div>
+                        <h4 className="text-sm sm:text-base font-black text-zinc-900">
+                          ผลการประเมิน 3 มิติ: {currentStudent.name} (The 3 Dimensions of Assessment)
+                        </h4>
+                        <span className="text-[11px] font-semibold text-zinc-600">
+                          คะแนนรวมเฉลี่ย 3 มิติ: <strong className="text-purple-950 font-black">{studentAssessmentMetrics.overallTriadAvg}%</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    <span className={`text-xs font-black px-3 py-1 rounded-full border shadow-2xs ${studentAssessmentMetrics.levelBadge}`}>
+                      {studentAssessmentMetrics.levelText}
+                    </span>
+                  </div>
+
+                  {/* 3 Progress Bars: As, For, Of Learning */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {/* Dimension 1: As Learning */}
+                    <div className="bg-purple-50/70 p-3 rounded-xl border border-purple-300 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs font-black text-purple-950">
+                        <span className="flex items-center gap-1">
+                          <span>🧠</span>
+                          <span>As Learning</span>
+                        </span>
+                        <span className="text-sm font-black text-purple-900">
+                          {studentAssessmentMetrics.asLearningScore}%
+                        </span>
+                      </div>
+                      <div className="w-full h-2.5 bg-purple-100 rounded-full overflow-hidden border border-purple-300">
+                        <div
+                          className="h-full bg-purple-500 rounded-full transition-all duration-500"
+                          style={{ width: `${studentAssessmentMetrics.asLearningScore}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] font-bold text-zinc-600 block">
+                        ผู้เรียนประเมินตนเอง / เพื่อนร่วมชั้นประเมิน
+                      </span>
+                    </div>
+
+                    {/* Dimension 2: For Learning */}
+                    <div className="bg-sky-50/70 p-3 rounded-xl border border-sky-300 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs font-black text-sky-950">
+                        <span className="flex items-center gap-1">
+                          <span>🛠️</span>
+                          <span>For Learning</span>
+                        </span>
+                        <span className="text-sm font-black text-sky-900">
+                          {studentAssessmentMetrics.forLearningScore}%
+                        </span>
+                      </div>
+                      <div className="w-full h-2.5 bg-sky-100 rounded-full overflow-hidden border border-sky-300">
+                        <div
+                          className="h-full bg-sky-500 rounded-full transition-all duration-500"
+                          style={{ width: `${studentAssessmentMetrics.forLearningScore}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] font-bold text-zinc-600 block">
+                        ครูทำหน้าที่ให้ Feedback พัฒนางาน
+                      </span>
+                    </div>
+
+                    {/* Dimension 3: Of Learning */}
+                    <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-300 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs font-black text-emerald-950">
+                        <span className="flex items-center gap-1">
+                          <span>🎯</span>
+                          <span>Of Learning</span>
+                        </span>
+                        <span className="text-sm font-black text-emerald-900">
+                          {studentAssessmentMetrics.ofLearningScore}%
+                        </span>
+                      </div>
+                      <div className="w-full h-2.5 bg-emerald-100 rounded-full overflow-hidden border border-emerald-300">
+                        <div
+                          className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                          style={{ width: `${studentAssessmentMetrics.ofLearningScore}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] font-bold text-zinc-600 block">
+                        ครูประเมินเพื่อตัดสินผลสัมฤทธิ์
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Individual Diagnostic Feedback */}
+                  <div className="bg-[#FFFDF5] p-3 rounded-xl border border-zinc-300 text-xs space-y-1">
+                    <span className="font-black text-zinc-900 flex items-center gap-1">
+                      <span>💡</span>
+                      <span>บทวิเคราะห์ทางวิชาการและแนวทางพัฒนาสำหรับ {currentStudent.name}:</span>
+                    </span>
+                    <p className="text-[11px] text-zinc-700 leading-relaxed font-medium">
+                      {studentAssessmentMetrics.asLearningScore >= 80
+                        ? `นักเรียนมีความสามารถในการสะท้อนตนเอง (Assessment as Learning) อยู่ในเกณฑ์ดีเยี่ยม สามารถตรวจสอบความก้าวหน้าในการเรียนรู้ของตนเองได้อย่างมีเป้าหมาย`
+                        : `ควรส่งเสริมให้นักเรียนร่วมสะท้อนความรู้สึกและความเข้าใจในมุมสะท้อนคิดอย่างสม่ำเสมอ`}
+                      {studentAssessmentMetrics.forLearningScore >= 80
+                        ? ` ควบคู่กับความรับผิดชอบในการส่งชิ้นงานระหว่างทาง (Assessment for Learning) ที่ยอดเยี่ยม`
+                        : ` และกระตุ้นการส่งงานให้ตรงเวลา`}
+                      {studentAssessmentMetrics.ofLearningScore >= 80
+                        ? ` ส่งผลให้ผลสัมฤทธิ์ปลายทาง (Assessment of Learning) อยู่ในเกณฑ์มาตรฐานระดับสูง`
+                        : ` แนะนำให้ทบทวนข้อสอบเพื่อเพิ่มคะแนนผลสัมฤทธิ์ปลายทาง`}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Charts Section: 2 Charts Side-by-Side */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 
@@ -971,7 +1503,7 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
                       📝 แบบบันทึกและประเมินผลการเรียนรู้: {currentStudent.name}
                     </h4>
                   </div>
-                  <span className="text-xs font-bold text-zinc-600">บันทึกโดยคุณครูผู้สอน</span>
+                  <span className="text-xs font-bold text-zinc-600">บันทึกโดยคุณครู</span>
                 </div>
 
                 <form onSubmit={handleSaveRubric} className="space-y-4">
@@ -1172,6 +1704,17 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Confirm Delete Student Modal */}
+      <ConfirmDeleteModal
+        isOpen={!!studentToDelete}
+        title="ยืนยันการลบนักเรียนออกจากระบบ"
+        itemType="นักเรียน"
+        itemName={studentToDelete ? `${studentToDelete.name} (เลขที่ ${studentToDelete.studentNo} ${studentToDelete.classRoom})` : ''}
+        description="เมื่อลบแล้ว ข้อมูลนักเรียนคนนี้จะถูกนำออกจากระบบทันที คุณครูสามารถเพิ่มใหม่ได้ภายหลัง"
+        onConfirm={handleConfirmDelete}
+        onClose={() => setStudentToDelete(null)}
+      />
 
     </div>
   );

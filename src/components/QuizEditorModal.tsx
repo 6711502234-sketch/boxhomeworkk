@@ -91,7 +91,7 @@ export const QuizEditorModal: React.FC<QuizEditorModalProps> = ({
   onSave,
   onDelete,
   initialQuiz,
-  authorName = 'ครูผู้สอน'
+  authorName = 'คุณครู'
 }) => {
   const [title, setTitle] = useState('');
   const [subject, setSubject] = useState('วิทยาศาสตร์');
@@ -225,6 +225,81 @@ export const QuizEditorModal: React.FC<QuizEditorModalProps> = ({
     });
   };
 
+  const handleAddOption = (qIdx: number) => {
+    setQuestions((prev) => {
+      const copy = [...prev];
+      const currentOpts = copy[qIdx].options || [];
+      if (currentOpts.length >= 8) {
+        alert('สามารถเพิ่มตัวเลือกได้สูงสุด 8 ตัวเลือก');
+        return copy;
+      }
+      const newOpts = [...currentOpts, ''];
+      const newOptionImages = copy[qIdx].optionImages ? [...copy[qIdx].optionImages] : [];
+      while (newOptionImages.length < newOpts.length) {
+        newOptionImages.push(undefined);
+      }
+      copy[qIdx] = {
+        ...copy[qIdx],
+        options: newOpts,
+        optionImages: newOptionImages,
+      };
+      return copy;
+    });
+  };
+
+  const handleRemoveOption = (qIdx: number, optIdx: number) => {
+    setQuestions((prev) => {
+      const copy = [...prev];
+      const currentOpts = copy[qIdx].options || [];
+      if (currentOpts.length <= 2) {
+        alert('คำถามต้องมีตัวเลือกอย่างน้อย 2 ตัวเลือก');
+        return copy;
+      }
+      const newOpts = currentOpts.filter((_, idx) => idx !== optIdx);
+      const newOptionImages = copy[qIdx].optionImages
+        ? copy[qIdx].optionImages.filter((_, idx) => idx !== optIdx)
+        : [];
+      let newCorrectIndex = copy[qIdx].correctIndex;
+      if (newCorrectIndex === optIdx) {
+        newCorrectIndex = 0;
+      } else if (newCorrectIndex > optIdx) {
+        newCorrectIndex -= 1;
+      }
+      copy[qIdx] = {
+        ...copy[qIdx],
+        options: newOpts,
+        optionImages: newOptionImages,
+        correctIndex: newCorrectIndex,
+      };
+      return copy;
+    });
+  };
+
+  const handleUpdateOptionImage = (qIdx: number, optIdx: number, imageUrl: string) => {
+    setQuestions((prev) => {
+      const copy = [...prev];
+      const newOptionImages = copy[qIdx].optionImages
+        ? [...copy[qIdx].optionImages]
+        : new Array(copy[qIdx].options.length).fill(undefined);
+      while (newOptionImages.length < copy[qIdx].options.length) {
+        newOptionImages.push(undefined);
+      }
+      newOptionImages[optIdx] = imageUrl ? imageUrl.trim() : undefined;
+      copy[qIdx] = { ...copy[qIdx], optionImages: newOptionImages };
+      return copy;
+    });
+  };
+
+  const handleUploadOptionImage = (qIdx: number, optIdx: number, file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        handleUpdateOptionImage(qIdx, optIdx, reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSetCorrectChoice = (qIdx: number, optIdx: number) => {
     setQuestions((prev) => {
       const copy = [...prev];
@@ -282,11 +357,20 @@ export const QuizEditorModal: React.FC<QuizEditorModalProps> = ({
         setErrorMsg(`กรุณากรอกโจทย์คำถามในข้อที่ ${i + 1}`);
         return;
       }
-      for (let optIdx = 0; optIdx < 4; optIdx++) {
-        if (!q.options[optIdx] || !q.options[optIdx].trim()) {
-          setErrorMsg(`กรุณากรอกตัวเลือกที่ ${String.fromCharCode(65 + optIdx)} ในข้อที่ ${i + 1} ให้ครบถ้วน`);
+      if (!q.options || q.options.length < 2) {
+        setErrorMsg(`ข้อที่ ${i + 1} ต้องมีตัวเลือกอย่างน้อย 2 ข้อ`);
+        return;
+      }
+      for (let optIdx = 0; optIdx < q.options.length; optIdx++) {
+        const text = q.options[optIdx]?.trim();
+        const hasImg = !!q.optionImages?.[optIdx];
+        if (!text && !hasImg) {
+          setErrorMsg(`กรุณากรอกข้อความหรือใส่รูปภาพในตัวเลือกที่ ${String.fromCharCode(65 + optIdx)} ในข้อที่ ${i + 1}`);
           return;
         }
+      }
+      if (q.correctIndex >= q.options.length) {
+        q.correctIndex = 0;
       }
     }
 
@@ -304,6 +388,8 @@ export const QuizEditorModal: React.FC<QuizEditorModalProps> = ({
       questions: questions.map((q, idx) => ({
         ...q,
         id: idx + 1,
+        options: q.options.map((opt, optI) => opt.trim() || (q.optionImages?.[optI] ? `[รูปภาพตัวเลือก ${String.fromCharCode(65 + optI)}]` : `ตัวเลือก ${String.fromCharCode(65 + optI)}`)),
+        optionImages: q.optionImages && q.optionImages.some(Boolean) ? q.optionImages : undefined,
         explanation: q.explanation.trim() || 'คำตอบที่ถูกต้องตามหลักวิชาการ',
         tip: q.tip?.trim() || ''
       })),
@@ -329,8 +415,8 @@ export const QuizEditorModal: React.FC<QuizEditorModalProps> = ({
                 <h3 className="text-lg md:text-xl font-black text-zinc-900">
                   {initialQuiz ? '✏️ แก้ไขชุดแบบทดสอบ' : '➕ สร้างแบบทดสอบใหม่'}
                 </h3>
-                <span className="bg-purple-200 text-purple-950 font-black text-[10px] px-2 py-0.5 rounded-full border border-zinc-900">
-                  คุณครูผู้สอน
+                <span className="bg-amber-200 text-amber-950 font-medium text-[10px] px-2 py-0.5 rounded-full border border-amber-400">
+                  คุณครู
                 </span>
               </div>
               <p className="text-xs font-semibold text-zinc-600 mt-0.5">
@@ -631,49 +717,151 @@ export const QuizEditorModal: React.FC<QuizEditorModalProps> = ({
                     )}
                   </div>
 
-                  {/* 4 Choices */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-black text-zinc-800 flex items-center justify-between">
-                      <span>ตัวเลือก 4 ข้อ (คลิกที่ปุ่มวงกลมเพื่อเลือกข้อที่ถูกต้อง/เฉลย):</span>
-                    </label>
+                  {/* Choices Section (ครูสามารถเพิ่มช้อยส์คำตอบ และเพิ่มรูปในช้อยส์ได้) */}
+                  <div className="space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                      <label className="text-xs font-black text-zinc-800 flex items-center gap-1.5">
+                        <span>ตัวเลือกคำตอบ ({q.options.length} ข้อ):</span>
+                        <span className="text-[11px] font-semibold text-zinc-500">
+                          (คลิกปุ่มวงกลม A, B, C... เพื่อตั้งเป็นเฉลย)
+                        </span>
+                      </label>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      {['A', 'B', 'C', 'D'].map((letter, optIdx) => {
+                      {/* Add Choice Button */}
+                      {q.options.length < 8 && (
+                        <button
+                          type="button"
+                          onClick={() => handleAddOption(qIdx)}
+                          className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-950 font-black text-xs rounded-lg border border-zinc-900 shadow-[1px_1px_0px_#000] flex items-center gap-1 cursor-pointer self-start sm:self-auto transition-transform active:translate-y-0.5"
+                          title="เพิ่มตัวเลือกคำตอบใหม่ในข้อนี้"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>+ เพิ่มตัวเลือก ({String.fromCharCode(65 + q.options.length)})</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {q.options.map((opt, optIdx) => {
+                        const letter = String.fromCharCode(65 + optIdx);
                         const isCorrect = q.correctIndex === optIdx;
+                        const optionImg = q.optionImages?.[optIdx];
+
                         return (
                           <div
-                            key={letter}
-                            className={`p-2.5 rounded-xl border-2 transition-all flex items-start gap-2 ${
+                            key={optIdx}
+                            className={`p-3 rounded-xl border-2 transition-all flex flex-col justify-between space-y-2 ${
                               isCorrect
-                                ? 'bg-emerald-50 border-emerald-600 shadow-[2px_2px_0px_#059669]'
+                                ? 'bg-emerald-50/90 border-emerald-600 shadow-[2px_2px_0px_#059669]'
                                 : 'bg-white border-zinc-300'
                             }`}
                           >
-                            <button
-                              type="button"
-                              onClick={() => handleSetCorrectChoice(qIdx, optIdx)}
-                              className={`w-6 h-6 rounded-full border-2 text-[10px] font-black shrink-0 mt-0.5 flex items-center justify-center cursor-pointer ${
-                                isCorrect
-                                  ? 'bg-emerald-500 text-white border-zinc-900'
-                                  : 'bg-zinc-100 text-zinc-700 border-zinc-400 hover:bg-emerald-100'
-                              }`}
-                              title={isCorrect ? 'ข้อนี้เป็นคำตอบที่ถูกต้อง (เฉลย)' : 'คลิกเพื่อตั้งข้อนี้เป็นเฉลย'}
-                            >
-                              {isCorrect ? '✓' : letter}
-                            </button>
+                            <div className="flex items-start gap-2">
+                              {/* Choice Radio / Correct Answer Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleSetCorrectChoice(qIdx, optIdx)}
+                                className={`w-7 h-7 rounded-full border-2 text-xs font-black shrink-0 mt-0.5 flex items-center justify-center cursor-pointer transition-transform ${
+                                  isCorrect
+                                    ? 'bg-emerald-500 text-white border-zinc-900 scale-105 shadow-xs'
+                                    : 'bg-zinc-100 text-zinc-700 border-zinc-400 hover:bg-emerald-100'
+                                }`}
+                                title={isCorrect ? 'ข้อนี้เป็นคำตอบที่ถูกต้อง (เฉลย)' : 'คลิกเพื่อตั้งข้อนี้เป็นเฉลย'}
+                              >
+                                {isCorrect ? '✓' : letter}
+                              </button>
 
-                            <input
-                              type="text"
-                              required
-                              value={q.options[optIdx] || ''}
-                              onChange={(e) => handleUpdateOption(qIdx, optIdx, e.target.value)}
-                              placeholder={`ตัวเลือก ${letter}...`}
-                              className={`w-full px-2 py-1 rounded-lg border text-xs font-semibold ${
-                                isCorrect
-                                  ? 'bg-white border-emerald-500 font-black text-emerald-950'
-                                  : 'bg-zinc-50 border-zinc-300'
-                              }`}
-                            />
+                              {/* Choice Text Input */}
+                              <div className="flex-1 min-w-0">
+                                <input
+                                  type="text"
+                                  value={opt}
+                                  onChange={(e) => handleUpdateOption(qIdx, optIdx, e.target.value)}
+                                  placeholder={`พิมพ์ข้อความตัวเลือก ${letter}...`}
+                                  className={`w-full px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${
+                                    isCorrect
+                                      ? 'bg-white border-emerald-500 font-black text-emerald-950'
+                                      : 'bg-zinc-50 border-zinc-300'
+                                  }`}
+                                />
+                              </div>
+
+                              {/* Delete Choice Button (If > 2 choices) */}
+                              {q.options.length > 2 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveOption(qIdx, optIdx)}
+                                  className="p-1.5 hover:bg-rose-100 text-rose-600 rounded-lg border border-rose-300 cursor-pointer shrink-0"
+                                  title={`ลบตัวเลือก ${letter}`}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Choice Image Section (ครูสามารถเพิ่มรูปในช้อยคำตอบได้) */}
+                            <div className="pt-1 border-t border-dashed border-zinc-200">
+                              {optionImg ? (
+                                <div className="flex items-center gap-2 bg-zinc-50 p-1.5 rounded-lg border border-zinc-200">
+                                  <img
+                                    src={optionImg}
+                                    alt={`รูปช้อยส์ ${letter}`}
+                                    className="w-12 h-12 object-contain bg-white rounded border border-zinc-300 shrink-0"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-[11px] font-bold text-zinc-700 block truncate">
+                                      รูปภาพตัวเลือก {letter}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateOptionImage(qIdx, optIdx, '')}
+                                      className="text-[10px] font-bold text-rose-600 hover:text-rose-800 flex items-center gap-0.5 cursor-pointer mt-0.5"
+                                    >
+                                      <X className="w-3 h-3" /> ลบรูปตัวเลือกนี้
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <label className="px-2 py-1 bg-sky-50 hover:bg-sky-100 text-sky-800 rounded-md border border-sky-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors">
+                                    <Upload className="w-3 h-3" />
+                                    <span>+ รูปในช้อยส์ {letter}</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        if (e.target.files && e.target.files[0]) {
+                                          handleUploadOptionImage(qIdx, optIdx, e.target.files[0]);
+                                        }
+                                      }}
+                                    />
+                                  </label>
+
+                                  <input
+                                    type="url"
+                                    placeholder="หรือวาง URL รูป..."
+                                    className="flex-1 min-w-[100px] text-[10px] px-2 py-0.5 bg-zinc-50 rounded border border-zinc-300"
+                                    onBlur={(e) => {
+                                      if (e.target.value.trim()) {
+                                        handleUpdateOptionImage(qIdx, optIdx, e.target.value.trim());
+                                        e.target.value = '';
+                                      }
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        const val = (e.target as HTMLInputElement).value.trim();
+                                        if (val) {
+                                          handleUpdateOptionImage(qIdx, optIdx, val);
+                                          (e.target as HTMLInputElement).value = '';
+                                        }
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              )}
+                            </div>
                           </div>
                         );
                       })}

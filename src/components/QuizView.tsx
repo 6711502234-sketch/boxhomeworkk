@@ -230,8 +230,8 @@ export const QuizView: React.FC<QuizViewProps> = ({
                   <h2 className="text-xl md:text-2xl font-black text-zinc-900">
                     2. แบบทดสอบ (Teacher Quiz Hub)
                   </h2>
-                  <span className="bg-purple-300 text-purple-950 font-black text-xs px-2.5 py-0.5 rounded-full border border-zinc-900">
-                    ครูผู้สอน
+                  <span className="bg-amber-300 text-stone-900 font-medium text-xs px-2.5 py-0.5 rounded-full border border-amber-500">
+                    คุณครู
                   </span>
                 </div>
                 <p className="text-xs md:text-sm font-semibold text-zinc-700 mt-0.5">
@@ -633,19 +633,29 @@ export const QuizView: React.FC<QuizViewProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-xs">
                       {q.options.map((opt, optIdx) => {
                         const isCorrect = optIdx === q.correctIndex;
+                        const optImg = q.optionImages?.[optIdx];
                         return (
                           <div
                             key={optIdx}
-                            className={`p-2 rounded-lg border font-semibold flex items-center gap-1.5 ${
+                            className={`p-2.5 rounded-lg border font-semibold flex flex-col gap-1.5 ${
                               isCorrect
                                 ? 'bg-emerald-100 border-emerald-600 text-emerald-950 font-black'
                                 : 'bg-zinc-50 border-zinc-200 text-zinc-700'
                             }`}
                           >
-                            <span className="w-5 h-5 rounded-full border border-zinc-900 flex items-center justify-center text-[10px] shrink-0 font-bold">
-                              {isCorrect ? '✓' : String.fromCharCode(65 + optIdx)}
-                            </span>
-                            <span>{opt}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-5 h-5 rounded-full border border-zinc-900 flex items-center justify-center text-[10px] shrink-0 font-bold bg-white">
+                                {isCorrect ? '✓' : String.fromCharCode(65 + optIdx)}
+                              </span>
+                              <span>{opt}</span>
+                            </div>
+                            {optImg && (
+                              <img
+                                src={optImg}
+                                alt={`รูปตัวเลือก ${String.fromCharCode(65 + optIdx)}`}
+                                className="max-h-24 max-w-full rounded border border-zinc-300 bg-white object-contain mx-auto"
+                              />
+                            )}
                           </div>
                         );
                       })}
@@ -900,27 +910,40 @@ export const QuizView: React.FC<QuizViewProps> = ({
           <div className="space-y-3.5 mb-8">
             {currentQ?.options.map((opt, optIdx) => {
               const isSelected = userAnswers[currentQ.id] === optIdx;
+              const optImg = currentQ.optionImages?.[optIdx];
               return (
                 <button
                   key={optIdx}
                   type="button"
                   onClick={() => handleSelectOption(currentQ.id, optIdx)}
-                  className={`w-full p-4.5 rounded-[18px_12px_16px_14px] border-3 text-left transition-all flex items-start gap-3.5 cursor-pointer ${
+                  className={`w-full p-4 rounded-[18px_12px_16px_14px] border-3 text-left transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer ${
                     isSelected
                       ? 'bg-amber-100 border-zinc-900 shadow-[4px_4px_0px_#18181b] translate-x-1'
                       : 'bg-[#FFFDF5] border-zinc-400 hover:border-zinc-900 hover:bg-amber-50/50'
                   }`}
                 >
-                  <div
-                    className={`w-7 h-7 rounded-full border-2 border-zinc-900 flex items-center justify-center text-sm font-black shrink-0 mt-0.5 ${
-                      isSelected ? 'bg-amber-400 text-zinc-950' : 'bg-white text-zinc-800'
-                    }`}
-                  >
-                    {isSelected ? '✓' : String.fromCharCode(65 + optIdx)}
+                  <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                    <div
+                      className={`w-7 h-7 rounded-full border-2 border-zinc-900 flex items-center justify-center text-sm font-black shrink-0 mt-0.5 ${
+                        isSelected ? 'bg-amber-400 text-zinc-950' : 'bg-white text-zinc-800'
+                      }`}
+                    >
+                      {isSelected ? '✓' : String.fromCharCode(65 + optIdx)}
+                    </div>
+                    <span className="text-sm md:text-base font-bold text-zinc-900 leading-normal">
+                      {opt}
+                    </span>
                   </div>
-                  <span className="text-sm md:text-base font-bold text-zinc-900 leading-normal">
-                    {opt}
-                  </span>
+
+                  {optImg && (
+                    <div className="sm:max-w-[150px] max-h-24 bg-white p-1 rounded-xl border-2 border-zinc-900 overflow-hidden shrink-0 self-center sm:self-auto shadow-xs">
+                      <img
+                        src={optImg}
+                        alt={`ภาพตัวเลือก ${String.fromCharCode(65 + optIdx)}`}
+                        className="max-h-20 w-auto object-contain mx-auto rounded-lg"
+                      />
+                    </div>
+                  )}
                 </button>
               );
             })}
@@ -1127,6 +1150,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
                         {q.options.map((opt, optIdx) => {
                           const isOptCorrect = optIdx === q.correctIndex;
                           const isOptSelected = optIdx === userAnswerIdx;
+                          const optImg = q.optionImages?.[optIdx];
 
                           let style = 'bg-white/80 border-zinc-200 text-zinc-700';
                           if (isOptCorrect) {
@@ -1136,11 +1160,20 @@ export const QuizView: React.FC<QuizViewProps> = ({
                           }
 
                           return (
-                            <div key={optIdx} className={`p-2.5 rounded-xl border flex items-center gap-2 ${style}`}>
-                              <span className="w-5 h-5 rounded-full border border-zinc-900 flex items-center justify-center text-[10px] font-bold shrink-0 bg-white">
-                                {isOptCorrect ? '✓' : String.fromCharCode(65 + optIdx)}
-                              </span>
-                              <span>{opt}</span>
+                            <div key={optIdx} className={`p-2.5 rounded-xl border flex flex-col gap-1.5 ${style}`}>
+                              <div className="flex items-center gap-2">
+                                <span className="w-5 h-5 rounded-full border border-zinc-900 flex items-center justify-center text-[10px] font-bold shrink-0 bg-white">
+                                  {isOptCorrect ? '✓' : String.fromCharCode(65 + optIdx)}
+                                </span>
+                                <span>{opt}</span>
+                              </div>
+                              {optImg && (
+                                <img
+                                  src={optImg}
+                                  alt={`รูปตัวเลือก ${String.fromCharCode(65 + optIdx)}`}
+                                  className="max-h-20 w-auto rounded border border-zinc-300 bg-white object-contain mx-auto"
+                                />
+                              )}
                             </div>
                           );
                         })}

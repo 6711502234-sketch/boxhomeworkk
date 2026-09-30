@@ -20,108 +20,159 @@ html {
   font-size: 18px;
 }
 
-@layer base {
-  * {
-    font-family: 'JaoTomato Thin', 'JaoTomato', 'Jao Tomato', 'Mali', 'Itim', 'Gaegu', 'Patrick Hand', 'Charm', cursive, system-ui, sans-serif;
-  }
-
-  body {
-    font-family: 'JaoTomato Thin', 'JaoTomato', 'Jao Tomato', 'Mali', 'Itim', 'Gaegu', 'Patrick Hand', 'Charm', cursive, system-ui, sans-serif;
-    font-size: 1rem;
-    line-height: 1.6;
-    letter-spacing: 0.015em;
-  }
-  
-  h1, h2, h3, h4, h5, h6 {
-    font-family: 'JaoTomato Thin', 'JaoTomato', 'Jao Tomato', 'Mali', 'Itim', 'Gaegu', 'Patrick Hand', 'Charm', cursive, sans-serif;
-    font-weight: 700;
-    line-height: 1.35;
-  }
-
-  button, input, select, textarea {
-    font-family: 'JaoTomato Thin', 'JaoTomato', 'Jao Tomato', 'Mali', 'Itim', 'Gaegu', 'Patrick Hand', 'Charm', cursive, sans-serif;
-    font-size: 1rem;
+@media (min-width: 640px) {
+  html {
+    font-size: 18.5px;
   }
 }
 
-/* Children Notebook paper patterns and sketch styles */
+@layer base {
+  * {
+    font-family: 'JaoTomato Thin', 'JaoTomato', 'เจ้ามะเขือเทศ', 'Mali', 'Itim', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  body {
+    font-family: 'JaoTomato Thin', 'JaoTomato', 'เจ้ามะเขือเทศ', 'Mali', 'Itim', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1.05rem;
+    font-weight: 400;
+    line-height: 1.65;
+    letter-spacing: 0.012em;
+    background-color: #FFFDF5;
+    color: #292524;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'JaoTomato Thin', 'JaoTomato', 'เจ้ามะเขือเทศ', 'Mali', 'Itim', system-ui, -apple-system, sans-serif;
+    font-weight: 600;
+    line-height: 1.35;
+    letter-spacing: 0.01em;
+    color: #1c1917;
+  }
+
+  button, input, select, textarea {
+    font-family: 'JaoTomato Thin', 'JaoTomato', 'เจ้ามะเขือเทศ', 'Mali', 'Itim', system-ui, -apple-system, sans-serif;
+    font-size: 1.025rem;
+    font-weight: 400;
+  }
+
+  b, strong {
+    font-weight: 700;
+  }
+}
+
+/* Ensure minimum comfortable eye-level reading size across badges, tags and footnotes */
+.text-\[9px\], [class*="text-[9px]"] {
+  font-size: 0.775rem !important;
+}
+
+.text-\[10px\], [class*="text-[10px]"] {
+  font-size: 0.825rem !important;
+}
+
+.text-\[11px\], [class*="text-[11px]"] {
+  font-size: 0.875rem !important;
+}
+
+/* Formal clean background grid in warm yellow-white */
 .notebook-grid {
-  background-size: 26px 26px;
+  background-size: 28px 28px;
   background-image: 
-    linear-gradient(to right, rgba(0, 0, 0, 0.045) 1.5px, transparent 1.5px),
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.045) 1.5px, transparent 1.5px);
+    linear-gradient(to right, rgba(245, 158, 11, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(245, 158, 11, 0.04) 1px, transparent 1px);
 }
 
 .notebook-lines {
   background-size: 100% 28px;
-  background-image: linear-gradient(to bottom, transparent 27px, #e2e8f0 27px);
+  background-image: linear-gradient(to bottom, transparent 27px, #FEF3C7 27px);
 }
 
 .notebook-dots {
-  background-image: radial-gradient(rgba(0, 0, 0, 0.12) 1.5px, transparent 1.5px);
+  background-image: radial-gradient(rgba(245, 158, 11, 0.12) 1.5px, transparent 1.5px);
   background-size: 20px 20px;
 }
 
-/* Hand-drawn Sketch Box Shadow & Hover Animations */
+/* Yellow and White theme styling */
 .sketch-border {
-  border: 3px solid #18181b;
-  box-shadow: 4px 4px 0px #18181b;
+  border: 1.5px solid #FCD34D;
+  box-shadow: 0 2px 4px rgba(217, 119, 6, 0.06);
   transition: all 0.15s ease-in-out;
 }
 
 .sketch-border-lg {
-  border: 3.5px solid #18181b;
-  box-shadow: 6px 6px 0px #18181b;
+  border: 2px solid #FCD34D;
+  box-shadow: 0 4px 12px rgba(217, 119, 6, 0.08);
   transition: all 0.15s ease-in-out;
 }
 
 .sketch-btn {
-  border: 2.5px solid #18181b;
-  box-shadow: 3px 3px 0px #18181b;
-  transition: all 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+  border: 1.5px solid #F59E0B;
+  box-shadow: 0 2px 4px rgba(217, 119, 6, 0.08);
+  transition: all 0.15s ease-in-out;
 }
 
 .sketch-btn:hover:not(:disabled) {
-  transform: translate(-2px, -2px);
-  box-shadow: 5px 5px 0px #18181b;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(217, 119, 6, 0.14);
 }
 
 .sketch-btn:active:not(:disabled) {
-  transform: translate(2px, 2px);
-  box-shadow: 1px 1px 0px #18181b;
+  transform: translateY(1px);
+  box-shadow: 0 1px 2px rgba(217, 119, 6, 0.05);
 }
 
 .sketch-input {
-  border: 2.5px solid #18181b;
-  box-shadow: 2px 2px 0px #18181b inset;
+  border: 1.5px solid #FCD34D;
+  background-color: #ffffff;
+  color: #292524;
+  box-shadow: 0 1px 2px rgba(217, 119, 6, 0.04) inset;
   outline: none;
 }
 
 .sketch-input:focus {
-  border-color: #0284c7;
-  box-shadow: 3px 3px 0px #0284c7 inset;
+  border-color: #F59E0B;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22);
 }
 
-/* Washi tape visual effect */
-.washi-tape {
-  position: absolute;
-  height: 20px;
-  width: 90px;
-  background: rgba(253, 224, 71, 0.75);
-  border: 1px dashed rgba(0, 0, 0, 0.25);
-  transform: rotate(-3deg);
-  z-index: 10;
+/* Flat Icon Badges */
+.flat-icon-container {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background-color: #FEF9C3;
+  color: #B45309;
+  border: 1px solid #FCD34D;
 }
 
-/* Children hand-drawn doodle badges and stickers */
+.flat-icon-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background-color: #F59E0B;
+  color: #ffffff;
+}
+
+.flat-icon-dark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background-color: #78350F;
+  color: #ffffff;
+}
+
+/* Formal badges */
 .doodle-stamp {
   display: inline-block;
-  transform: rotate(-2deg);
-  border: 2px dashed #18181b;
-  border-radius: 12px;
+  border: 1px solid #F59E0B;
+  border-radius: 8px;
   padding: 4px 10px;
-  background-color: #fff9db;
-  font-weight: 700;
+  background-color: #FFFBEB;
+  color: #92400E;
+  font-weight: 400;
 }
 
 .doodle-underline {

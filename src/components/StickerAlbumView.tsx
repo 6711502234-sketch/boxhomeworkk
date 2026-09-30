@@ -21,7 +21,7 @@ export const StickerAlbumView: React.FC<StickerAlbumViewProps> = ({
     if (stars >= 250) {
       return {
         level: 5,
-        title: '👑 แชมป์เปี้ยนกล่องการบ้าน ม.3 (Level MAX)',
+        title: '👑 แชมป์เปี้ยน TaskHub ม.3 (Level MAX)',
         nextGoal: 300,
         color: 'from-amber-400 to-yellow-500',
       };

@@ -126,7 +126,7 @@ export const ScorebookView: React.FC<ScorebookViewProps> = ({
     {
       id: 'homework-legend',
       name: 'Homework Legend',
-      thaiTitle: 'แชมป์กล่องการบ้าน',
+      thaiTitle: 'แชมป์ TaskHub',
       icon: '👑',
       color: 'bg-orange-100 border-orange-500 text-orange-950',
     },
@@ -192,7 +192,7 @@ export const ScorebookView: React.FC<ScorebookViewProps> = ({
   // Compute Rank based on stars for student
   const getRankInfo = (stars: number) => {
     if (stars >= 250) {
-      return { level: 5, title: '👑 แชมป์เปี้ยนกล่องการบ้าน (Level MAX)', nextGoal: 300 };
+      return { level: 5, title: '👑 แชมป์เปี้ยน TaskHub (Level MAX)', nextGoal: 300 };
     }
     if (stars >= 180) {
       return { level: 4, title: '🚀 ยอดนักเรียนดีเด่น (Level 4)', nextGoal: 250 };
@@ -241,8 +241,8 @@ export const ScorebookView: React.FC<ScorebookViewProps> = ({
                   <h2 className="text-xl md:text-2xl font-black text-zinc-900">
                     3. สมุดคะแนน (สามารถให้สติกเกอร์กับนักเรียนได้)
                   </h2>
-                  <span className="bg-purple-300 text-purple-950 font-black text-xs px-2.5 py-0.5 rounded-full border border-zinc-900">
-                    โหมดคุณครู
+                  <span className="bg-amber-300 text-stone-900 font-medium text-xs px-2.5 py-0.5 rounded-full border border-amber-500">
+                    คุณครู
                   </span>
                 </div>
                 <p className="text-xs md:text-sm font-semibold text-zinc-700 mt-0.5">

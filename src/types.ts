@@ -97,6 +97,7 @@ export interface QuizQuestion {
   id: number;
   question: string;
   options: string[];
+  optionImages?: (string | undefined)[]; // Optional image per choice (JPG, PNG, Data URL)
   correctIndex: number;
   explanation: string;
   tip?: string;

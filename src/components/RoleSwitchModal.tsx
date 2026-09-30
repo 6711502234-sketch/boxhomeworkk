@@ -29,7 +29,7 @@ export const RoleSwitchModal: React.FC<RoleSwitchModalProps> = ({
   const handleSelectRole = (newRole: UserRole) => {
     setRole(newRole);
     if (newRole === 'teacher' && name === 'เด็กชายสมชาย สายวิทย์') {
-      setName('คุณครูนิภาภรณ์ ใจดี (ครูผู้สอน)');
+      setName('คุณครูนิภาภรณ์ ใจดี');
       setAvatar('👩‍🏫');
     } else if (newRole === 'student' && name.includes('ครู')) {
       setName('เด็กชายสมชาย สายวิทย์');
@@ -41,7 +41,7 @@ export const RoleSwitchModal: React.FC<RoleSwitchModalProps> = ({
     onSaveProfile({
       ...currentUser,
       role,
-      name: name.trim() || (role === 'teacher' ? 'คุณครูผู้สอน' : 'นักเรียน'),
+      name: name.trim() || (role === 'teacher' ? 'คุณครู' : 'นักเรียน'),
       classRoom,
       studentNo,
       avatar,
@@ -72,7 +72,7 @@ export const RoleSwitchModal: React.FC<RoleSwitchModalProps> = ({
             ระบบสลับสถานะและโปรไฟล์ผู้ใช้งาน
           </h2>
           <p className="text-sm font-semibold text-zinc-600 mt-1">
-            เลือกบทบาทเพื่อทดสอบการใช้งานระบบกล่องการบ้าน ม.3
+            เลือกบทบาทเพื่อทดสอบการใช้งานระบบ TaskHub ม.3
           </p>
         </div>
 
@@ -122,7 +122,7 @@ export const RoleSwitchModal: React.FC<RoleSwitchModalProps> = ({
                 </span>
               )}
             </div>
-            <div className="font-black text-zinc-900 text-base">คุณครูผู้สอน</div>
+            <div className="font-black text-zinc-900 text-base">คุณครู</div>
             <div className="text-xs font-semibold text-zinc-600">
               ตรวจการบ้าน • ดูผลประเมิน • สถิติควิซ
             </div>
@@ -133,7 +133,7 @@ export const RoleSwitchModal: React.FC<RoleSwitchModalProps> = ({
         <div className="space-y-4 bg-amber-50/70 p-4 rounded-[16px_14px_18px_12px] border-2 border-zinc-900/40 mb-6">
           <div>
             <label className="block text-xs font-bold text-zinc-800 mb-1">
-              {role === 'teacher' ? 'ชื่อคุณครูผู้สอน' : 'ชื่อ-นามสกุล นักเรียน'}
+              {role === 'teacher' ? 'ชื่อคุณครู' : 'ชื่อ-นามสกุล นักเรียน'}
             </label>
             <input
               type="text"

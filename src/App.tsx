@@ -47,22 +47,38 @@ import {
   saveTaskToFirestore,
   saveHomeworkToFirestore,
   saveEvaluationToFirestore,
+  saveReflectionToFirestore,
   subscribeToTasksFromFirestore,
   subscribeToHomeworksFromFirestore,
   subscribeToEvaluationsFromFirestore,
+  subscribeToReflectionsFromFirestore,
+  broadcastRealtimeUpdate,
+  subscribeToBroadcastRealtime,
 } from './services/firebaseSync';
 import { safeGetItem, safeSetItem } from './utils/storage';
 
 import { Download } from 'lucide-react';
 
 export default function App() {
-  // 0. Auth state
+  // 0. Auth state - remembers Google login on every session if rememberLogin is set
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return safeGetItem<string>('hw_box_logged_in', 'false') === 'true';
+    const loggedIn = safeGetItem<string>('hw_box_logged_in', 'false') === 'true';
+    const remember = safeGetItem<string>('hw_box_remember_login', 'true') === 'true';
+    const savedGoogle = safeGetItem<UserProfile | null>('hw_box_saved_google_user', null);
+    if (loggedIn) return true;
+    if (remember && savedGoogle && safeGetItem<string>('hw_box_logged_in', '') !== 'false') {
+      return true;
+    }
+    return false;
   });
 
-  // 1. User Profile State (persisted to safe storage)
+  // 1. User Profile State (persisted to safe storage, auto-restores remembered Google user)
   const [user, setUser] = useState<UserProfile>(() => {
+    const remember = safeGetItem<string>('hw_box_remember_login', 'true') === 'true';
+    const savedGoogle = safeGetItem<UserProfile | null>('hw_box_saved_google_user', null);
+    if (remember && savedGoogle) {
+      return savedGoogle;
+    }
     return safeGetItem<UserProfile>('hw_box_user', {
       id: 'std-01',
       name: 'เด็กชายสมชาย สายวิทย์',
@@ -269,23 +285,67 @@ export default function App() {
       }
     });
 
+    const unsubReflections = subscribeToReflectionsFromFirestore((firestoreTopics) => {
+      if (firestoreTopics && firestoreTopics.length > 0) {
+        setReflectionTopics((prev) => {
+          const map = new Map<string, TeacherReflectionTopic>();
+          firestoreTopics.forEach((t) => map.set(t.id, t));
+          prev.forEach((t) => {
+            if (!map.has(t.id)) map.set(t.id, t);
+          });
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    // Cross-tab real-time listener: instantly syncs tasks, homeworks, reflections across open tabs
+    const unsubBroadcast = subscribeToBroadcastRealtime((type, payload) => {
+      if (type === 'NEW_TASK' || type === 'UPDATE_TASKS') {
+        setAssignmentTasks(payload);
+      } else if (type === 'NEW_HOMEWORK' || type === 'UPDATE_HOMEWORKS') {
+        setHomeworkList(payload);
+      } else if (type === 'NEW_EVALUATION' || type === 'UPDATE_EVALUATIONS') {
+        setEvaluations(payload);
+      } else if (type === 'UPDATE_STUDENT_RECORDS') {
+        setStudentRecords(payload);
+      } else if (type === 'UPDATE_REFLECTIONS') {
+        setReflectionTopics(payload);
+      }
+    });
+
     return () => {
       if (typeof unsubTasks === 'function') unsubTasks();
       if (typeof unsubHws === 'function') unsubHws();
       if (typeof unsubEvals === 'function') unsubEvals();
+      if (typeof unsubReflections === 'function') unsubReflections();
+      if (typeof unsubBroadcast === 'function') unsubBroadcast();
     };
   }, []);
 
   const handleCreateReflectionTopic = (topic: TeacherReflectionTopic) => {
-    setReflectionTopics((prev) => [topic, ...prev]);
+    setReflectionTopics((prev) => {
+      const next = [topic, ...prev];
+      broadcastRealtimeUpdate('UPDATE_REFLECTIONS', next);
+      return next;
+    });
+    saveReflectionToFirestore(topic);
   };
 
   const handleUpdateReflectionTopic = (updated: TeacherReflectionTopic) => {
-    setReflectionTopics((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    setReflectionTopics((prev) => {
+      const next = prev.map((t) => (t.id === updated.id ? updated : t));
+      broadcastRealtimeUpdate('UPDATE_REFLECTIONS', next);
+      return next;
+    });
+    saveReflectionToFirestore(updated);
   };
 
   const handleDeleteReflectionTopic = (topicId: string) => {
-    setReflectionTopics((prev) => prev.filter((t) => t.id !== topicId));
+    setReflectionTopics((prev) => {
+      const next = prev.filter((t) => t.id !== topicId);
+      broadcastRealtimeUpdate('UPDATE_REFLECTIONS', next);
+      return next;
+    });
   };
 
   // Auto-sync classroom dataset to Google Sheets when enabled
@@ -453,6 +513,10 @@ export default function App() {
     setIsAuthenticated(true);
     safeSetItem('hw_box_logged_in', 'true');
     safeSetItem('hw_box_user', newUser);
+    if (newUser.googleEmail) {
+      safeSetItem('hw_box_saved_google_user', newUser);
+      safeSetItem('hw_box_remember_login', 'true');
+    }
     saveUserProfileToFirestore(newUser);
 
     if (newUser.role === 'student') {
@@ -490,7 +554,7 @@ export default function App() {
   // Handle Logout
   const handleLogout = () => {
     setIsAuthenticated(false);
-    localStorage.removeItem('hw_box_logged_in');
+    safeSetItem('hw_box_logged_in', 'false');
   };
 
   // Award Stars with animation
@@ -515,48 +579,76 @@ export default function App() {
 
   // Assignment Tasks Management
   const handleCreateAssignmentTask = (newTask: AssignmentTask) => {
-    setAssignmentTasks((prev) => [newTask, ...prev]);
+    setAssignmentTasks((prev) => {
+      const next = [newTask, ...prev];
+      broadcastRealtimeUpdate('UPDATE_TASKS', next);
+      return next;
+    });
     saveTaskToFirestore(newTask);
     triggerFestiveConfetti();
   };
 
   const handleUpdateAssignmentTask = (updatedTask: AssignmentTask) => {
-    setAssignmentTasks((prev) =>
-      prev.map((t) => (t.id === updatedTask.id ? updatedTask : t))
-    );
+    setAssignmentTasks((prev) => {
+      const next = prev.map((t) => (t.id === updatedTask.id ? updatedTask : t));
+      broadcastRealtimeUpdate('UPDATE_TASKS', next);
+      return next;
+    });
     saveTaskToFirestore(updatedTask);
   };
 
   const handleDeleteAssignmentTask = (taskId: string) => {
-    setAssignmentTasks((prev) => prev.filter((t) => t.id !== taskId));
+    setAssignmentTasks((prev) => {
+      const next = prev.filter((t) => t.id !== taskId);
+      broadcastRealtimeUpdate('UPDATE_TASKS', next);
+      return next;
+    });
   };
 
   // Student Submit Homework
   const handleSubmitHomework = (newHw: Homework) => {
-    setHomeworkList((prev) => [newHw, ...prev]);
+    setHomeworkList((prev) => {
+      const next = [newHw, ...prev];
+      broadcastRealtimeUpdate('UPDATE_HOMEWORKS', next);
+      return next;
+    });
     saveHomeworkToFirestore(newHw);
     handleAwardStars(50, 'ส่งชิ้นงานการบ้านเรียบร้อย (+50 ดาว)');
 
     // Update student record homework count
-    setStudentRecords((prev) =>
-      prev.map((s) => (s.id === user.id ? { ...s, homeworkCount: s.homeworkCount + 1 } : s))
-    );
+    setStudentRecords((prev) => {
+      const next = prev.map((s) => (s.id === user.id ? { ...s, homeworkCount: s.homeworkCount + 1 } : s));
+      broadcastRealtimeUpdate('UPDATE_STUDENT_RECORDS', next);
+      return next;
+    });
   };
 
   // Teacher Review / Edit Homework
   const handleUpdateHomework = (updated: Homework) => {
-    setHomeworkList((prev) => prev.map((h) => (h.id === updated.id ? updated : h)));
+    setHomeworkList((prev) => {
+      const next = prev.map((h) => (h.id === updated.id ? updated : h));
+      broadcastRealtimeUpdate('UPDATE_HOMEWORKS', next);
+      return next;
+    });
     saveHomeworkToFirestore(updated);
   };
 
   // Delete Homework
   const handleDeleteHomework = (id: string) => {
-    setHomeworkList((prev) => prev.filter((h) => h.id !== id));
+    setHomeworkList((prev) => {
+      const next = prev.filter((h) => h.id !== id);
+      broadcastRealtimeUpdate('UPDATE_HOMEWORKS', next);
+      return next;
+    });
   };
 
   // Student Submit Teacher Evaluation
   const handleSubmitEvaluation = (newEval: TeacherEvaluation) => {
-    setEvaluations((prev) => [newEval, ...prev]);
+    setEvaluations((prev) => {
+      const next = [newEval, ...prev];
+      broadcastRealtimeUpdate('UPDATE_EVALUATIONS', next);
+      return next;
+    });
     saveEvaluationToFirestore(newEval);
     handleAwardStars(30, 'ส่งบันทึกมุมสะท้อนถึงคุณครู (+30 ดาว)');
   };
@@ -567,21 +659,34 @@ export default function App() {
       dateStyle: 'medium',
       timeStyle: 'short',
     });
-    setEvaluations((prev) =>
-      prev.map((e) =>
-        e.id === evalId
-          ? {
-              ...e,
-              teacherReply: replyText,
-              teacherRepliedAt: repliedAt,
-            }
-          : e
-      )
-    );
+    let updatedEval: TeacherEvaluation | null = null;
+    setEvaluations((prev) => {
+      const next = prev.map((e) => {
+        if (e.id === evalId) {
+          const up = {
+            ...e,
+            teacherReply: replyText,
+            teacherRepliedAt: repliedAt,
+          };
+          updatedEval = up;
+          return up;
+        }
+        return e;
+      });
+      broadcastRealtimeUpdate('UPDATE_EVALUATIONS', next);
+      return next;
+    });
+    if (updatedEval) {
+      saveEvaluationToFirestore(updatedEval);
+    }
   };
 
   const handleDeleteEvaluation = (evalId: string) => {
-    setEvaluations((prev) => prev.filter((e) => e.id !== evalId));
+    setEvaluations((prev) => {
+      const next = prev.filter((e) => e.id !== evalId);
+      broadcastRealtimeUpdate('UPDATE_EVALUATIONS', next);
+      return next;
+    });
   };
 
   // Teacher award sticker to student
@@ -606,8 +711,8 @@ export default function App() {
       starsAdded: bonusStars,
     };
 
-    setStudentRecords((prev) =>
-      prev.map((std) => {
+    setStudentRecords((prev) => {
+      const next = prev.map((std) => {
         if (std.id === studentId) {
           const alreadyHasSticker = std.unlockedStickers.includes(stickerId);
           return {
@@ -618,8 +723,10 @@ export default function App() {
           };
         }
         return std;
-      })
-    );
+      });
+      broadcastRealtimeUpdate('UPDATE_STUDENT_RECORDS', next);
+      return next;
+    });
 
     // If awarding to the currently logged in student, update their live profile
     if (user.id === studentId) {
@@ -635,15 +742,27 @@ export default function App() {
 
   // Update Student Record directly (e.g. from score input fields)
   const handleUpdateStudentRecord = (updatedStudent: StudentRecord) => {
-    setStudentRecords((prev) =>
-      prev.map((s) => (s.id === updatedStudent.id ? updatedStudent : s))
-    );
+    setStudentRecords((prev) => {
+      const next = prev.map((s) => (s.id === updatedStudent.id ? updatedStudent : s));
+      broadcastRealtimeUpdate('UPDATE_STUDENT_RECORDS', next);
+      return next;
+    });
     if (user.id === updatedStudent.id) {
       setUser((prev) => ({
         ...prev,
         totalStars: updatedStudent.totalStars,
       }));
     }
+  };
+
+  // Delete Student Record (For Teacher Dashboard)
+  const handleDeleteStudentRecord = (studentId: string) => {
+    setStudentRecords((prev) => {
+      const next = prev.filter((s) => s.id !== studentId);
+      safeSetItem('hw_box_student_records', next);
+      broadcastRealtimeUpdate('UPDATE_STUDENT_RECORDS', next);
+      return next;
+    });
   };
 
   // Create, Update, Delete Quiz Lessons (For Teacher)
@@ -779,7 +898,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FFFDF5] notebook-grid p-3 sm:p-5 md:p-8 flex flex-col justify-between">
+    <div className="min-h-screen bg-[#FFFDF5] notebook-grid p-3 sm:p-5 md:p-8 flex flex-col justify-between font-['JaoTomato_Thin','JaoTomato','เจ้ามะเขือเทศ','Mali',sans-serif]">
       <div className="max-w-6xl w-full mx-auto">
         {/* Header */}
         <Header
@@ -868,23 +987,24 @@ export default function App() {
               onUpdateStudentRecord={handleUpdateStudentRecord}
               onAwardStars={handleAwardStars}
               onOpenGoogleSheets={() => setIsGoogleSheetsModalOpen(true)}
+              onDeleteStudent={handleDeleteStudentRecord}
             />
           )}
         </main>
       </div>
 
       {/* Footer */}
-      <footer className="max-w-6xl w-full mx-auto pt-6 border-t-3 border-zinc-900 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-bold text-zinc-600 pb-4">
+      <footer className="max-w-6xl w-full mx-auto pt-6 border-t border-amber-300 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-normal text-stone-600 pb-4">
         <div className="flex items-center gap-2">
-          <span>📦 กล่องการบ้าน (Homework Box)</span>
-          <span>• สไตล์ภาพวาดลายเส้นการ์ตูน</span>
+          <span className="text-stone-900 font-medium">TaskHub</span>
+          <span>• ระบบสารสนเทศการเรียนรู้</span>
         </div>
 
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={downloadStandaloneHtml}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-200 hover:bg-amber-300 text-zinc-950 rounded-lg sketch-btn cursor-pointer font-black shadow-[2px_2px_0px_#000]"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-400 hover:bg-amber-500 text-stone-900 rounded-lg cursor-pointer font-normal border border-amber-500 shadow-xs transition-colors"
             title="ดาวน์โหลดไฟล์ Single File HTML สำหรับรันแบบ Offline"
           >
             <Download className="w-3.5 h-3.5" />

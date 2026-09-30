@@ -633,8 +633,8 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
                     : '1. เพิ่มชิ้นงาน & ส่งภาระงานที่ได้รับมอบหมาย'}
                 </h2>
                 {isTeacher ? (
-                  <span className="bg-purple-300 text-purple-950 font-black text-xs px-2.5 py-0.5 rounded-full border border-zinc-900 shadow-[1px_1px_0px_#000]">
-                    โหมดคุณครูผู้สอน
+                  <span className="bg-amber-300 text-stone-900 font-medium text-xs px-2.5 py-0.5 rounded-full border border-amber-500 shadow-2xs">
+                    คุณครู
                   </span>
                 ) : (
                   <span className="bg-emerald-300 text-emerald-950 font-black text-xs px-2.5 py-0.5 rounded-full border border-zinc-900 shadow-[1px_1px_0px_#000]">
@@ -1707,10 +1707,10 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-3 bg-amber-400 hover:bg-amber-500 text-zinc-950 font-black text-sm rounded-xl sketch-btn flex items-center justify-center gap-2 cursor-pointer shadow-[3px_3px_0px_#18181b]"
+                className="w-full py-3 bg-sky-600 hover:bg-sky-700 text-white font-black text-sm rounded-xl sketch-btn flex items-center justify-center gap-2 cursor-pointer shadow-[3px_3px_0px_#0369a1]"
               >
                 <Send className="w-4 h-4" />
-                <span>ส่งชิ้นงานเข้ากล่องการบ้าน (+50 ⭐)</span>
+                <span>ส่งชิ้นงานเข้า TaskHub (+50 ⭐)</span>
               </button>
             </form>
           </div>

@@ -903,6 +903,7 @@ export const AvatarDisplay: React.FC<AvatarDisplayProps> = ({
       <img
         src={effectiveAvatar}
         alt={altName}
+        referrerPolicy="no-referrer"
         className={`object-cover rounded-full border-2 border-zinc-900 select-none shadow-[1.5px_1.5px_0px_#18181b] bg-amber-100 shrink-0 ${className}`}
         style={numericSize ? { width: numericSize, height: numericSize } : undefined}
       />

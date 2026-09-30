@@ -140,3 +140,67 @@ export function subscribeToEvaluationsFromFirestore(onUpdate: (evals: TeacherEva
     return () => {};
   }
 }
+
+/**
+ * Save reflection topic to Firestore
+ */
+export async function saveReflectionToFirestore(topic: TeacherReflectionTopic): Promise<void> {
+  try {
+    const topicDocRef = doc(db, REFLECTIONS_COLLECTION, topic.id);
+    await setDoc(topicDocRef, topic, { merge: true });
+    console.log('Reflection synced to Firestore:', topic.id);
+  } catch (error) {
+    console.warn('Could not sync reflection to Firestore:', error);
+  }
+}
+
+/**
+ * Real-time listener for reflection topics
+ */
+export function subscribeToReflectionsFromFirestore(onUpdate: (topics: TeacherReflectionTopic[]) => void) {
+  try {
+    const q = query(collection(db, REFLECTIONS_COLLECTION));
+    return onSnapshot(q, (snapshot) => {
+      const topics: TeacherReflectionTopic[] = [];
+      snapshot.forEach((docSnap) => {
+        topics.push(docSnap.data() as TeacherReflectionTopic);
+      });
+      if (topics.length > 0) {
+        onUpdate(topics);
+      }
+    }, (err) => {
+      console.warn('Firestore reflections subscription info:', err.message);
+    });
+  } catch (e) {
+    console.warn('Firestore subscribe error:', e);
+    return () => {};
+  }
+}
+
+// Cross-tab real-time broadcast channel
+const syncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
+  ? new BroadcastChannel('taskhub_realtime_channel')
+  : null;
+
+export function broadcastRealtimeUpdate(type: string, payload: any) {
+  try {
+    if (syncChannel) {
+      syncChannel.postMessage({ type, payload, timestamp: Date.now() });
+    }
+  } catch (e) {
+    console.error('BroadcastChannel error:', e);
+  }
+}
+
+export function subscribeToBroadcastRealtime(onMessage: (type: string, payload: any) => void) {
+  if (!syncChannel) return () => {};
+  const handler = (event: MessageEvent) => {
+    if (event.data && event.data.type) {
+      onMessage(event.data.type, event.data.payload);
+    }
+  };
+  syncChannel.addEventListener('message', handler);
+  return () => {
+    syncChannel.removeEventListener('message', handler);
+  };
+}

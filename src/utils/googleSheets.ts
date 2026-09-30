@@ -1,7 +1,7 @@
 import { ExamScore } from '../types';
 
 export const APPS_SCRIPT_TEMPLATE = `/**
- * Google Apps Script สำหรับรับคะแนนจาก "กล่องการบ้าน & แบบทดสอบ ม.3"
+ * Google Apps Script สำหรับรับคะแนนจาก "TaskHub & แบบทดสอบ ม.3"
  * บันทึกลงใน Google Sheets อัตโนมัติ
  */
 
