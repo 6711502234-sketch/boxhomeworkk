@@ -1,3 +1,5 @@
+import { doc, onSnapshot } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 import React, { useState, useEffect } from 'react';
 import {
   UserProfile,
@@ -72,6 +74,14 @@ export default function App() {
     return false;
   });
 
+  onAuthStateChanged(auth, (user) => {
+  if (!user) return showLogin();
+  onSnapshot(doc(db, "users", user.uid), (snap) => {
+    if (!snap.exists()) return showOnboardingForm(); // ล็อกอินครั้งแรก
+    const profile = snap.data();
+    profile.role === "teacher" ? showTeacherApp(profile) : showStudentApp(profile);
+  });
+});
   // 1. User Profile State (persisted to safe storage, auto-restores remembered Google user)
   const [user, setUser] = useState<UserProfile>(() => {
     const remember = safeGetItem<string>('hw_box_remember_login', 'true') === 'true';
