@@ -5,7 +5,10 @@ import { GoogleIcon } from './GoogleIcon';
 import { safeGetItem, safeSetItem } from '../utils/storage';
 import { auth, googleProvider, signInWithPopup } from '../firebase';
 import { saveUserProfileToFirestore } from '../services/firebaseSync';
-import rawFirebaseConfig from '../../firebase-applet-config.json';
+
+const firebaseConfig = {
+  oAuthClientId: import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID as string | undefined,
+};
 import {
   Loader2,
   AlertCircle,
