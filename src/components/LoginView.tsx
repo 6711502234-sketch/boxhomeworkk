@@ -16,6 +16,7 @@ import {
 
 interface LoginViewProps {
   onLogin: (user: UserProfile) => void;
+  onGoogleSignIn?: () => void;   // ← เพิ่มบรรทัดนี้
   initialRole?: UserRole;
   studentRecords?: StudentRecord[];
   onRegisterStudent?: (record: StudentRecord, user: UserProfile) => void;
@@ -236,6 +237,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 <span>คุณครู</span>
                 {role === 'teacher' && <Check className="w-5 h-5 stroke-[3]" />}
               </button>
+            
+              <button type="button" onClick={onGoogleSignIn}
+              className="w-full py-2.5 border border-stone-300 rounded-lg bg-white hover:bg-stone-50">
+              เข้าสู่ระบบด้วย Google
+              </button>
+
             </div>
           </div>
 
