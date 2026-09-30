@@ -1,3 +1,5 @@
+import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { setDoc, doc, serverTimestamp } from "firebase/firestore";
 import { doc, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import React, { useState, useEffect } from 'react';
@@ -82,6 +84,30 @@ export default function App() {
     profile.role === "teacher" ? showTeacherApp(profile) : showStudentApp(profile);
   });
 });
+
+const classId = `m${level}-${room}`; // เช่น level=2, room=3 -> "m2-3"
+await setDoc(doc(db, "users", user.uid), {
+  role: "student",
+  fullName, gradeLevel: `ม.${level}`, room: String(room),
+  studentNo: Number(studentNo), classId,
+  email: user.email, createdAt: serverTimestamp(),
+});
+
+  await setDoc(doc(db, "classes", "m2-3"), {
+  gradeLevel: "ม.2", room: "3",
+  teacherIds: [user.uid], createdBy: user.uid,
+});
+
+
+const q = query(
+  collection(db, "assignmentTasks"),
+  where("classIds", "array-contains", profile.classId)
+);
+
+  const q = query(collection(db, "assignmentTasks"), where("teacherId", "==", user.uid));
+onSnapshot(q, (snap) => renderTasks(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+  
+onSnapshot(q, (snap) => renderTasks(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
   // 1. User Profile State (persisted to safe storage, auto-restores remembered Google user)
   const [user, setUser] = useState<UserProfile>(() => {
     const remember = safeGetItem<string>('hw_box_remember_login', 'true') === 'true';
