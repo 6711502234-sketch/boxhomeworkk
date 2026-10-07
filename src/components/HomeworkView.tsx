@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { UserProfile, Homework, HomeworkStatus, AssignmentTask, StudentRecord } from '../types';
 import { AvatarDisplay } from './DoodleAvatars';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
@@ -49,6 +49,7 @@ import {
   copyToClipboardSafely
 } from './ContentLinkViewerModal';
 import { compressImageFile } from '../utils/storage';
+import { isClassMatching } from '../utils/classMatching';
 
 interface HomeworkViewProps {
   currentUser: UserProfile;
@@ -149,6 +150,20 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
     if (l.endsWith('.docx') || l.endsWith('.doc') || mime?.includes('word') || mime?.includes('officedocument')) return 'docx';
     return 'other';
   };
+
+  // Filter visible tasks according to role and targeted classroom per requirement 4:
+  // "4.ระบบจะจำการเข้าใช้งานจากการที่ครูระบุชั้นเรียนเท่านั้น เช่น หากครูไม่ได้ระบุชั้นเรียนที่นักเรียนอยู่นักเรียนคนอื่นจะไม่สามารถเห็นชิ้นงาน แบบทดสอบหรืออื่นๆได้"
+  const visibleTasks = useMemo(() => {
+    return assignmentTasks.filter((task) => {
+      if (isTeacher) {
+        if (classFilter === 'all') return true;
+        return isClassMatching(classFilter, task.targetClass);
+      }
+
+      // For Student: Must match their classroom strictly
+      return isClassMatching(currentUser.classRoom, task.targetClass);
+    });
+  }, [assignmentTasks, isTeacher, classFilter, currentUser.classRoom]);
 
   const formatBytes = (bytes: number): string => {
     if (bytes < 1024) return bytes + ' B';
@@ -316,6 +331,7 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
         dueDate: taskDueDate.trim() || '15 ก.ย. 2569',
         createdAt: new Date().toLocaleDateString('th-TH', { dateStyle: 'medium' }),
         authorTeacher: currentUser.name,
+        teacherId: currentUser.id,
         attachmentName: cleanName,
         attachmentLink: cleanLink,
         attachmentData: taskAttachmentData || undefined,
@@ -400,11 +416,14 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
     e.preventDefault();
     if (!title.trim()) return;
 
-    const matchedTask = assignmentTasks.find((t) => t.id === selectedTaskForSubmission);
+    const matchedTask =
+      assignmentTasks.find((t) => t.id === selectedTaskForSubmission) ||
+      assignmentTasks.find((t) => isClassMatching(currentUser.classRoom, t.targetClass));
 
     const newHw: Homework = {
       id: 'hw-' + Date.now(),
-      taskId: selectedTaskForSubmission || undefined,
+      taskId: selectedTaskForSubmission || matchedTask?.id || undefined,
+      teacherId: matchedTask?.teacherId,
       title: title.trim(),
       subject: subject.trim() || matchedTask?.subject || 'วิทยาศาสตร์และเทคโนโลยี',
       description: description.trim() || 'ส่งการบ้านเรียบร้อยครับ/ค่ะ',
@@ -418,6 +437,7 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
       studentId: currentUser.id,
       studentName: currentUser.name,
       studentClass: currentUser.classRoom,
+      studentNo: currentUser.studentNo,
       studentAvatar: currentUser.avatar,
       status: 'pending',
       maxScore: matchedTask?.maxScore || 10,
@@ -662,7 +682,7 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
               </button>
             ) : (
               <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border-2 border-zinc-900 text-xs font-bold shadow-[2px_2px_0px_#000]">
-                <span>ชิ้นงานที่ครูมอบหมาย: {assignmentTasks.length} ชิ้น</span>
+                <span>ชิ้นงานที่ครูมอบหมาย: {visibleTasks.length} ชิ้น</span>
               </div>
             )}
           </div>
@@ -683,7 +703,7 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
           <Layers className="w-4 h-4" />
           <span>{isTeacher ? '➕ เพิ่มชิ้นงาน (โพสต์งานให้นักเรียนทำ)' : '📋 ชิ้นงานที่ได้รับมอบหมาย'}</span>
           <span className="bg-zinc-900 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
-            {assignmentTasks.length}
+            {visibleTasks.length}
           </span>
         </button>
 
@@ -740,17 +760,21 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
             </div>
           </div>
 
-          {assignmentTasks.length === 0 ? (
+          {visibleTasks.length === 0 ? (
             <div className="bg-white sketch-border rounded-[22px_16px_20px_18px] p-10 text-center shadow-[4px_4px_0px_#18181b]">
               <div className="text-5xl mb-3">📋</div>
-              <h4 className="text-lg font-black text-zinc-900">ยังไม่มีชิ้นงานที่โพสต์มอบหมาย</h4>
+              <h4 className="text-lg font-black text-zinc-900">
+                {isTeacher
+                  ? 'ยังไม่มีชิ้นงานที่โพสต์มอบหมาย'
+                  : `ยังไม่มีชิ้นงานที่มอบหมายสำหรับชั้นเรียน ${currentUser.classRoom || ''}`}
+              </h4>
               <p className="text-xs font-semibold text-zinc-500 mt-1">
-                {isTeacher ? 'กดปุ่มด้านบนเพื่อเริ่มโพสต์งานชิ้นแรก' : 'รอคุณครูโพสต์มอบหมายงานใหม่'}
+                {isTeacher ? 'กดปุ่มด้านบนเพื่อเริ่มโพสต์งานชิ้นแรก' : 'ระบบจะแสดงเฉพาะชิ้นงานที่ครูระบุสำหรับชั้นเรียนของคุณ'}
               </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {assignmentTasks.map((task) => {
+              {visibleTasks.map((task) => {
                 const submissionsForTask = homeworkList.filter((h) => h.taskId === task.id);
                 const isSubmittedByMe = mySubmissions.some((h) => h.taskId === task.id);
                 const mySubmissionItem = mySubmissions.find((h) => h.taskId === task.id);
@@ -1510,7 +1534,7 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
                   className="w-full min-h-[44px] bg-amber-50/70 p-2.5 rounded-xl border-2 border-zinc-900 text-xs sm:text-sm font-bold cursor-pointer"
                 >
                   <option value="">-- เลือกจากชิ้นงานที่ครูมอบหมาย (หรือส่งงานทั่วไป) --</option>
-                  {assignmentTasks.map((t) => (
+                  {visibleTasks.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.title} ({t.subject} - กำหนดส่ง: {t.dueDate})
                     </option>
@@ -1519,7 +1543,7 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
               </div>
 
               {/* If NO task is selected yet, provide a quick preview list of all assignment tasks */}
-              {!selectedTaskForSubmission && assignmentTasks.length > 0 && (
+              {!selectedTaskForSubmission && visibleTasks.length > 0 && (
                 <div className="bg-amber-50/50 p-3 sm:p-3.5 rounded-2xl border-2 border-amber-300 space-y-2">
                   <div className="flex items-center justify-between text-xs font-black text-amber-950">
                     <span className="flex items-center gap-1.5">
@@ -1527,11 +1551,11 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
                       <span>เลือกการบ้านที่ครูสั่งไว้ เพื่อแสดงหัวข้อและรายละเอียด:</span>
                     </span>
                     <span className="text-[11px] font-bold bg-amber-200 px-2 py-0.5 rounded-md border border-amber-400 shrink-0">
-                      {assignmentTasks.length} ชิ้นงาน
+                      {visibleTasks.length} ชิ้นงาน
                     </span>
                   </div>
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                    {assignmentTasks.map((t) => (
+                    {visibleTasks.map((t) => (
                       <div
                         key={t.id}
                         onClick={() => {

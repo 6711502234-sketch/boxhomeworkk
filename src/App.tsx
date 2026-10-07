@@ -5,11 +5,12 @@ import {
   signOut,
   User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, googleProvider } from './services/firebase';
 
 import {
   UserProfile,
+  UserRole,
   ActiveTab,
   Homework,
   TeacherEvaluation,
@@ -57,14 +58,33 @@ import {
   saveHomeworkToFirestore,
   saveEvaluationToFirestore,
   saveReflectionToFirestore,
+  saveStudentRecordToFirestore,
+  saveExamScoreToFirestore,
+  saveLessonToFirestore,
+  deleteDocumentFromFirestore,
+  TASKS_COLLECTION,
+  HOMEWORKS_COLLECTION,
+  EVALUATIONS_COLLECTION,
+  REFLECTIONS_COLLECTION,
+  STUDENT_RECORDS_COLLECTION,
+  LESSONS_COLLECTION,
   subscribeToTasksFromFirestore,
   subscribeToHomeworksFromFirestore,
   subscribeToEvaluationsFromFirestore,
   subscribeToReflectionsFromFirestore,
+  subscribeToStudentRecordsFromFirestore,
+  subscribeToExamScoresFromFirestore,
+  subscribeToLessonsFromFirestore,
   broadcastRealtimeUpdate,
   subscribeToBroadcastRealtime,
 } from './services/firebaseSync';
+import { isClassMatching } from './utils/classMatching';
 import { safeGetItem, safeSetItem } from './utils/storage';
+import {
+  AvatarStudentBoyGlasses,
+  AvatarTeacherFemaleGlasses,
+} from './components/DoodleAvatars';
+import { DoodleGradCap } from './components/DoodleIcons';
 
 import { Download } from 'lucide-react';
 
@@ -89,93 +109,251 @@ function OnboardingView({
     level: string;
     room: string;
     studentNo: string;
+    subjectDepartment?: string;
+    teachingSubject?: string;
+    teachingClasses?: string;
   }) => void;
   onCancel: () => void;
 }) {
   const [role, setRole] = useState<'student' | 'teacher'>('student');
-  const [fullName, setFullName] = useState(pending.name);
-  const [level, setLevel] = useState('2');
-  const [room, setRoom] = useState('3');
+  const [fullName, setFullName] = useState(pending.name || '');
+  
+  // นักเรียน
+  const [level, setLevel] = useState('ม.2');
+  const [room, setRoom] = useState('1');
   const [studentNo, setStudentNo] = useState('1');
 
-  return (
-    <div className="min-h-screen bg-[#FFFDF5] flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white border-2 border-amber-300 rounded-2xl p-6 shadow-lg">
-        <h2 className="text-xl font-bold text-stone-800 mb-1">ยินดีต้อนรับ!</h2>
-        <p className="text-sm text-stone-500 mb-4">{pending.email}</p>
+  // คุณครู
+  const [subjectDepartment, setSubjectDepartment] = useState('วิทยาศาสตร์และเทคโนโลยี');
+  const [teachingSubject, setTeachingSubject] = useState('');
+  const [teachingClasses, setTeachingClasses] = useState('');
 
-        <label className="block text-sm mb-1">ฉันคือ</label>
-        <div className="flex gap-2 mb-3">
-          <button
-            type="button"
-            onClick={() => setRole('student')}
-            className={`flex-1 py-2 rounded-lg border ${
-              role === 'student' ? 'bg-amber-400 border-amber-500' : 'bg-white border-stone-300'
-            }`}
-          >
-            นักเรียน
-          </button>
-          <button
-            type="button"
-            onClick={() => setRole('teacher')}
-            className={`flex-1 py-2 rounded-lg border ${
-              role === 'teacher' ? 'bg-amber-400 border-amber-500' : 'bg-white border-stone-300'
-            }`}
-          >
-            คุณครู
-          </button>
+  const [formError, setFormError] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fullName.trim()) {
+      setFormError('กรุณากรอกชื่อ-นามสกุล');
+      return;
+    }
+    if (role === 'student') {
+      if (!level.trim() || !room.trim() || !studentNo.trim()) {
+        setFormError('กรุณากรอกระดับชั้น ห้อง และเลขที่ให้ครบถ้วน');
+        return;
+      }
+    } else {
+      if (!subjectDepartment.trim() || !teachingSubject.trim()) {
+        setFormError('กรุณากรอกหมวดวิชาและวิชาที่สอนให้ครบถ้วน');
+        return;
+      }
+    }
+
+    setFormError('');
+    onSubmit({
+      role,
+      fullName: fullName.trim(),
+      level: level.trim(),
+      room: room.trim(),
+      studentNo: studentNo.trim(),
+      subjectDepartment: subjectDepartment.trim(),
+      teachingSubject: teachingSubject.trim(),
+      teachingClasses: teachingClasses.trim(),
+    });
+  };
+
+  return (
+    <div className="min-h-screen bg-[#FFFDF5] notebook-grid flex items-center justify-center p-4 font-['JaoTomato_Thin','JaoTomato','เจ้ามะเขือเทศ','Mali',sans-serif]">
+      <div className="w-full max-w-lg bg-white border-2 border-zinc-900 rounded-3xl p-6 sm:p-8 shadow-[6px_6px_0px_#18181b] animate-in fade-in duration-200">
+        <div className="text-center mb-5">
+          <div className="inline-flex items-center justify-center p-3 bg-amber-200 border-2 border-zinc-900 rounded-2xl mb-2 shadow-[2px_2px_0px_#000]">
+            <DoodleGradCap className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-black text-stone-900">กรอกข้อมูลผู้ใช้งานครั้งแรก</h2>
+          <p className="text-sm font-medium text-stone-600 mt-1">
+            เชื่อมต่อผ่าน Google: <span className="font-bold text-amber-900">{pending.email}</span>
+          </p>
         </div>
 
-        <label className="block text-sm mb-1">ชื่อ-นามสกุล</label>
-        <input
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-          className="w-full mb-3 px-3 py-2 border border-stone-300 rounded-lg"
-        />
+        {/* Role Selector Tabs */}
+        <div className="mb-5">
+          <label className="block text-sm font-bold text-stone-800 mb-2">บทบาทของคุณในระบบ:</label>
+          <div className="grid grid-cols-2 gap-2 p-1.5 bg-[#FFFDF5] rounded-2xl border-2 border-zinc-900">
+            <button
+              type="button"
+              onClick={() => { setRole('student'); setFormError(''); }}
+              className={`py-3 px-4 rounded-xl text-base font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                role === 'student'
+                  ? 'bg-amber-400 text-stone-900 border-2 border-zinc-900 shadow-[2px_2px_0px_#18181b]'
+                  : 'bg-transparent text-stone-600 hover:bg-amber-100/50'
+              }`}
+            >
+              <AvatarStudentBoyGlasses className="w-6 h-6 shrink-0" />
+              <span>นักเรียน</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setRole('teacher'); setFormError(''); }}
+              className={`py-3 px-4 rounded-xl text-base font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                role === 'teacher'
+                  ? 'bg-amber-400 text-stone-900 border-2 border-zinc-900 shadow-[2px_2px_0px_#18181b]'
+                  : 'bg-transparent text-stone-600 hover:bg-amber-100/50'
+              }`}
+            >
+              <AvatarTeacherFemaleGlasses className="w-6 h-6 shrink-0" />
+              <span>คุณครู</span>
+            </button>
+          </div>
+        </div>
 
-        <div className="grid grid-cols-3 gap-2 mb-4">
+        {formError && (
+          <div className="mb-4 p-3 bg-rose-50 border-2 border-rose-300 rounded-xl text-rose-700 text-sm font-bold">
+            ⚠️ {formError}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm mb-1">ระดับ ม.</label>
+            <label className="block text-sm font-bold text-stone-800 mb-1">
+              ชื่อ - นามสกุล <span className="text-rose-500">*</span>
+            </label>
             <input
-              value={level}
-              onChange={(e) => setLevel(e.target.value)}
-              className="w-full px-3 py-2 border border-stone-300 rounded-lg"
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder={role === 'student' ? 'ด.ช. / ด.ญ. / นาย / น.ส. ชื่อ นามสกุล' : 'คุณครูชื่อ นามสกุล'}
+              className="w-full px-4 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-zinc-900 focus:bg-white text-base font-medium transition-colors"
+              required
             />
           </div>
-          <div>
-            <label className="block text-sm mb-1">ห้อง</label>
-            <input
-              value={room}
-              onChange={(e) => setRoom(e.target.value)}
-              className="w-full px-3 py-2 border border-stone-300 rounded-lg"
-            />
-          </div>
-          {role === 'student' && (
-            <div>
-              <label className="block text-sm mb-1">เลขที่</label>
-              <input
-                value={studentNo}
-                onChange={(e) => setStudentNo(e.target.value)}
-                className="w-full px-3 py-2 border border-stone-300 rounded-lg"
-              />
+
+          {/* Form Fields for Students */}
+          {role === 'student' ? (
+            <div className="space-y-3 pt-1">
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm font-bold text-stone-800 mb-1">
+                    ระดับชั้น <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={level}
+                    onChange={(e) => setLevel(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-zinc-900 text-base font-medium"
+                  >
+                    <option value="ม.1">ม.1</option>
+                    <option value="ม.2">ม.2</option>
+                    <option value="ม.3">ม.3</option>
+                    <option value="ม.4">ม.4</option>
+                    <option value="ม.5">ม.5</option>
+                    <option value="ม.6">ม.6</option>
+                    <option value="ป.4">ป.4</option>
+                    <option value="ป.5">ป.5</option>
+                    <option value="ป.6">ป.6</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-stone-800 mb-1">
+                    ห้อง <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={room}
+                    onChange={(e) => setRoom(e.target.value)}
+                    placeholder="เช่น 1, 2, 3"
+                    className="w-full px-3 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-zinc-900 text-base font-medium"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-stone-800 mb-1">
+                    เลขที่ <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="99"
+                    value={studentNo}
+                    onChange={(e) => setStudentNo(e.target.value)}
+                    placeholder="เช่น 15"
+                    className="w-full px-3 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-zinc-900 text-base font-medium"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Form Fields for Teachers */
+            <div className="space-y-3 pt-1">
+              <div>
+                <label className="block text-sm font-bold text-stone-800 mb-1">
+                  หมวดวิชา / กลุ่มสาระการเรียนรู้ <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={subjectDepartment}
+                  onChange={(e) => setSubjectDepartment(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-zinc-900 text-base font-medium"
+                >
+                  <option value="วิทยาศาสตร์และเทคโนโลยี">วิทยาศาสตร์และเทคโนโลยี</option>
+                  <option value="คณิตศาสตร์">คณิตศาสตร์</option>
+                  <option value="ภาษาไทย">ภาษาไทย</option>
+                  <option value="ภาษาต่างประเทศ">ภาษาต่างประเทศ</option>
+                  <option value="สังคมศึกษา ศาสนา และวัฒนธรรม">สังคมศึกษา ศาสนา และวัฒนธรรม</option>
+                  <option value="สุขศึกษาและพลศึกษา">สุขศึกษาและพลศึกษา</option>
+                  <option value="ศิลปะ ดนตรี และนาฏศิลป์">ศิลปะ ดนตรี และนาฏศิลป์</option>
+                  <option value="การงานอาชีพ">การงานอาชีพ</option>
+                  <option value="กิจกรรมพัฒนาผู้เรียน">กิจกรรมพัฒนาผู้เรียน</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-stone-800 mb-1">
+                  วิชาที่สอน <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={teachingSubject}
+                  onChange={(e) => setTeachingSubject(e.target.value)}
+                  placeholder="เช่น วิทยาการคำนวณ, ฟิสิกส์, คณิตศาสตร์พื้นฐาน"
+                  className="w-full px-4 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-zinc-900 text-base font-medium"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-stone-800 mb-1">
+                  ชั้นเรียนที่รับผิดชอบสอน (ระบุคั่นด้วยเครื่องหมายจุลภาค)
+                </label>
+                <input
+                  type="text"
+                  value={teachingClasses}
+                  onChange={(e) => setTeachingClasses(e.target.value)}
+                  placeholder="เช่น ม.2/1, ม.2/2, ม.2/3 (หรือ ทุกห้อง)"
+                  className="w-full px-4 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-zinc-900 text-base font-medium"
+                />
+                <span className="text-xs text-stone-500 block mt-1">
+                  * คุณครูสามารถมอบหมายงานและแบบทดสอบเฉพาะชั้นเรียนที่ระบุได้
+                </span>
+              </div>
             </div>
           )}
-        </div>
 
-        <button
-          type="button"
-          onClick={() => onSubmit({ role, fullName, level, room, studentNo })}
-          className="w-full py-2.5 bg-amber-400 hover:bg-amber-500 border border-amber-500 rounded-lg font-medium"
-        >
-          เริ่มใช้งาน
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="w-full mt-2 py-2 text-sm text-stone-500 hover:text-stone-700"
-        >
-          ออกจากระบบ
-        </button>
+          <div className="pt-3 space-y-2">
+            <button
+              type="submit"
+              className="w-full py-3.5 bg-amber-400 hover:bg-amber-500 text-stone-900 border-2 border-zinc-900 rounded-2xl text-base font-bold shadow-[3px_3px_0px_#18181b] cursor-pointer transition-all active:translate-y-0.5 active:shadow-xs"
+            >
+              บันทึกและเริ่มใช้งานระบบ
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="w-full py-2.5 text-stone-600 hover:text-stone-900 text-sm font-bold cursor-pointer"
+            >
+              ยกเลิกและออกจากระบบ
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -208,22 +386,22 @@ export default function App() {
 
   const [assignmentTasks, setAssignmentTasks] = useState<AssignmentTask[]>(() => {
     const saved = safeGetItem<AssignmentTask[]>('hw_box_assignment_tasks_single', []);
-    return Array.isArray(saved) && saved.length > 0 ? saved : sampleInitialAssignmentTasks.slice(0, 1);
+    return Array.isArray(saved) ? saved : [];
   });
 
   const [homeworkList, setHomeworkList] = useState<Homework[]>(() => {
     const saved = safeGetItem<Homework[]>('hw_box_homeworks', []);
-    return Array.isArray(saved) && saved.length > 0 ? saved : sampleInitialHomeworks;
+    return Array.isArray(saved) ? saved : [];
   });
 
   const [evaluations, setEvaluations] = useState<TeacherEvaluation[]>(() => {
     const saved = safeGetItem<TeacherEvaluation[]>('hw_box_evaluations', []);
-    return Array.isArray(saved) && saved.length > 0 ? saved : sampleInitialEvaluations;
+    return Array.isArray(saved) ? saved : [];
   });
 
   const [lessons, setLessons] = useState<QuizLesson[]>(() => {
     const saved = safeGetItem<QuizLesson[]>('hw_box_lessons_single', []);
-    return Array.isArray(saved) && saved.length > 0 ? saved : initialQuizLessons.slice(0, 1);
+    return Array.isArray(saved) ? saved : [];
   });
 
   const [stickers, setStickers] = useState<StickerAchievement[]>(() => {
@@ -233,17 +411,17 @@ export default function App() {
 
   const [examScores, setExamScores] = useState<StudentExamScore[]>(() => {
     const saved = safeGetItem<StudentExamScore[]>('hw_box_exam_scores', []);
-    return Array.isArray(saved) && saved.length > 0 ? saved : sampleStudentExamScores;
+    return Array.isArray(saved) ? saved : [];
   });
 
   const [studentRecords, setStudentRecords] = useState<StudentRecord[]>(() => {
     const saved = safeGetItem<StudentRecord[]>('hw_box_student_records', []);
-    return Array.isArray(saved) && saved.length > 0 ? saved : sampleStudentRecords;
+    return Array.isArray(saved) ? saved : [];
   });
 
   const [reflectionTopics, setReflectionTopics] = useState<TeacherReflectionTopic[]>(() => {
     const saved = safeGetItem<TeacherReflectionTopic[]>('hw_box_reflection_topics', []);
-    return Array.isArray(saved) && saved.length > 0 ? saved : sampleReflectionTopics;
+    return Array.isArray(saved) ? saved : [];
   });
 
   const [isGoogleSheetsModalOpen, setIsGoogleSheetsModalOpen] = useState<boolean>(false);
@@ -269,7 +447,15 @@ export default function App() {
       }
 
       if (!fbUser) {
-        setIsAuthenticated(false);
+        // หากมีเซสชันผู้ใช้ที่เข้าสู่ระบบไว้แล้ว ให้คงสถานะไว้เสมอเพื่อการใช้งานต่อเนื่อง
+        const localLoggedIn = safeGetItem<string>('hw_box_logged_in', 'false') === 'true';
+        const localUser = safeGetItem<UserProfile | null>('hw_box_user', null);
+        if (localLoggedIn && localUser) {
+          setUser(localUser);
+          setIsAuthenticated(true);
+        } else {
+          setIsAuthenticated(false);
+        }
         setPendingGoogleUser(null);
         setAuthReady(true);
         return;
@@ -293,18 +479,29 @@ export default function App() {
           }
 
           const data = snap.data() as Record<string, unknown>;
+          const isStudent = (data.role as 'student' | 'teacher') !== 'teacher';
+          const gradeLevel = (data.gradeLevel as string) || (data.level as string) || 'ม.2';
+          const room = String(data.room ?? '1');
+          const teachingClasses = (data.teachingClasses as string[]) || (data.classRoom ? [String(data.classRoom)] : ['ม.2/1', 'ม.2/2']);
+
           const profile: UserProfile = {
             id: fbUser.uid,
-            name: (data.fullName as string) || fbUser.displayName || '',
+            name: (data.fullName as string) || (data.name as string) || fbUser.displayName || '',
             role: (data.role as 'student' | 'teacher') || 'student',
-            classRoom: (data.classRoom as string) || `ห้อง ${data.room ?? 1}`,
-            studentNo: String(data.studentNo ?? ''),
-            avatar: (data.avatar as string) || fbUser.photoURL || '🧑‍🎓',
-            totalStars: Number(data.totalStars ?? 100),
+            classRoom: (data.classRoom as string) || (isStudent ? `${gradeLevel}/${room}` : teachingClasses.join(', ')),
+            studentNo: String(data.studentNo ?? (isStudent ? '1' : 'คุณครู')),
+            gradeLevel,
+            room,
+            subjectDepartment: (data.subjectDepartment as string) || undefined,
+            teachingSubject: (data.teachingSubject as string) || undefined,
+            teachingClasses,
+            avatar: (data.avatar as string) || fbUser.photoURL || (isStudent ? '🧑‍🎓' : '👩‍🏫'),
+            totalStars: Number(data.totalStars ?? (isStudent ? 100 : 500)),
             unlockedStickers: (data.unlockedStickers as string[]) || ['first-step'],
-            studentIdCode: (data.studentIdCode as string) || `STD-${fbUser.uid.slice(0, 5)}`,
+            studentIdCode: (data.studentIdCode as string) || (isStudent ? `STD-${fbUser.uid.slice(0, 5)}` : undefined),
+            teacherIdCode: (data.teacherIdCode as string) || (!isStudent ? `TCH-${fbUser.uid.slice(0, 5).toUpperCase()}` : undefined),
             googleEmail: fbUser.email ?? '',
-          } as UserProfile;
+          };
 
           setUser(profile);
           setPendingGoogleUser(null);
@@ -331,9 +528,9 @@ export default function App() {
     try {
       await signInWithPopup(auth, googleProvider);
       triggerStarBurst();
-    } catch (err) {
-      console.error('Google sign-in ล้มเหลว:', err);
-      alert('เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองใหม่');
+    } catch (err: any) {
+      console.warn('Google sign-in ข้อผิดพลาด:', err);
+      throw err;
     }
   }, []);
 
@@ -345,40 +542,159 @@ export default function App() {
       level: string;
       room: string;
       studentNo: string;
+      subjectDepartment?: string;
+      teachingSubject?: string;
+      teachingClasses?: string;
     }) => {
       if (!pendingGoogleUser) return;
-      const classId = `m${data.level}-${data.room}`;
+      const isStudent = data.role === 'student';
+      const cleanLevel = data.level.startsWith('ม.') || data.level.startsWith('ป.') ? data.level : `ม.${data.level}`;
+      const studentClass = `${cleanLevel}/${data.room}`;
+      const teacherClassRoom = data.teachingClasses || 'ทุกห้อง';
+      const classRoom = isStudent ? studentClass : teacherClassRoom;
 
-      await setDoc(doc(db, 'users', pendingGoogleUser.uid), {
+      const studentIdCode = isStudent 
+        ? `STD-${cleanLevel.replace(/[^0-9]/g, '')}${String(data.room).padStart(2, '0')}${String(data.studentNo).padStart(2, '0')}`
+        : undefined;
+      const teacherIdCode = !isStudent ? `TCH-${pendingGoogleUser.uid.slice(0, 5).toUpperCase()}` : undefined;
+
+      const teachingClassList = data.teachingClasses 
+        ? data.teachingClasses.split(',').map((c) => c.trim()).filter(Boolean)
+        : [];
+
+      const userDoc = {
         role: data.role,
         fullName: data.fullName,
-        gradeLevel: `ม.${data.level}`,
+        name: data.fullName,
+        gradeLevel: cleanLevel,
         room: String(data.room),
-        classRoom: `ห้อง ${data.room}`,
-        studentNo: data.role === 'student' ? Number(data.studentNo) : null,
-        classId,
-        avatar: pendingGoogleUser.photoURL || '🧑‍🎓',
-        totalStars: 100,
+        classRoom,
+        studentNo: isStudent ? String(data.studentNo) : 'คุณครู',
+        studentIdCode: studentIdCode || null,
+        teacherIdCode: teacherIdCode || null,
+        subjectDepartment: data.subjectDepartment || null,
+        teachingSubject: data.teachingSubject || null,
+        teachingClasses: teachingClassList,
+        avatar: pendingGoogleUser.photoURL || (isStudent ? '🧑‍🎓' : '👩‍🏫'),
+        totalStars: isStudent ? 100 : 500,
         unlockedStickers: ['first-step'],
         email: pendingGoogleUser.email,
+        googleEmail: pendingGoogleUser.email,
         createdAt: serverTimestamp(),
-      });
+      };
 
-      if (data.role === 'teacher') {
-        await setDoc(
-          doc(db, 'classes', classId),
-          {
-            gradeLevel: `ม.${data.level}`,
-            room: String(data.room),
-            teacherIds: [pendingGoogleUser.uid],
-            createdBy: pendingGoogleUser.uid,
-          },
-          { merge: true }
-        );
+      await setDoc(doc(db, 'users', pendingGoogleUser.uid), userDoc, { merge: true });
+
+      // If Student: record to studentRecords in Firestore and local state
+      if (isStudent) {
+        const studentRecord: StudentRecord = {
+          id: pendingGoogleUser.uid,
+          name: data.fullName,
+          classRoom: studentClass,
+          studentNo: String(data.studentNo),
+          studentIdCode: studentIdCode || `STD-${pendingGoogleUser.uid.slice(0, 5)}`,
+          avatar: pendingGoogleUser.photoURL || '🧑‍🎓',
+          totalStars: 100,
+          unlockedStickers: ['first-step'],
+          homeworkCount: 0,
+          awardedBadges: [],
+          quizScores: {},
+        };
+
+        await setDoc(doc(db, 'studentRecords', pendingGoogleUser.uid), studentRecord, { merge: true });
+        setStudentRecords((prev) => {
+          const exists = prev.some((s) => s.id === studentRecord.id);
+          if (exists) return prev.map((s) => (s.id === studentRecord.id ? studentRecord : s));
+          return [studentRecord, ...prev];
+        });
       }
-      // onSnapshot ด้านบนจะจับการเปลี่ยนแปลงเองและพาเข้าแอป
+
+      // Create local user profile immediately and enter app
+      const profile: UserProfile = {
+        id: pendingGoogleUser.uid,
+        name: data.fullName,
+        role: data.role,
+        classRoom,
+        gradeLevel: isStudent ? cleanLevel : undefined,
+        room: isStudent ? String(data.room) : undefined,
+        studentNo: isStudent ? String(data.studentNo) : 'คุณครู',
+        studentIdCode,
+        teacherIdCode,
+        subjectDepartment: data.subjectDepartment,
+        teachingSubject: data.teachingSubject,
+        teachingClasses: teachingClassList,
+        avatar: pendingGoogleUser.photoURL || (isStudent ? '🧑‍🎓' : '👩‍🏫'),
+        totalStars: isStudent ? 100 : 500,
+        unlockedStickers: ['first-step'],
+        googleEmail: pendingGoogleUser.email,
+      };
+
+      setUser(profile);
+      setIsAuthenticated(true);
+      setPendingGoogleUser(null);
+      safeSetItem('hw_box_saved_google_user', profile);
+      safeSetItem('hw_box_user', profile);
+      safeSetItem('hw_box_logged_in', 'true');
+      triggerStarBurst();
     },
     [pendingGoogleUser]
+  );
+
+  /* ---------- Google Sign-in Fallback Handler (รองรับการระบุอีเมล Google) ---------- */
+  const handleSimulateGoogleSignIn = useCallback(
+    async (email: string, name?: string) => {
+      const cleanUid = 'google-' + email.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      try {
+        const snap = await getDoc(doc(db, 'users', cleanUid));
+        if (snap.exists()) {
+          const data = snap.data() as Record<string, unknown>;
+          const isStudent = (data.role as 'student' | 'teacher') !== 'teacher';
+          const gradeLevel = (data.gradeLevel as string) || (data.level as string) || 'ม.2';
+          const room = String(data.room ?? '1');
+          const teachingClasses = (data.teachingClasses as string[]) || (data.classRoom ? [String(data.classRoom)] : ['ม.2/1', 'ม.2/2']);
+
+          const profile: UserProfile = {
+            id: cleanUid,
+            name: (data.fullName as string) || (data.name as string) || name || email.split('@')[0],
+            role: (data.role as 'student' | 'teacher') || 'student',
+            classRoom: (data.classRoom as string) || (isStudent ? `${gradeLevel}/${room}` : teachingClasses.join(', ')),
+            studentNo: String(data.studentNo ?? (isStudent ? '1' : 'คุณครู')),
+            gradeLevel,
+            room,
+            subjectDepartment: (data.subjectDepartment as string) || undefined,
+            teachingSubject: (data.teachingSubject as string) || undefined,
+            teachingClasses,
+            avatar: (data.avatar as string) || (isStudent ? '🧑‍🎓' : '👩‍🏫'),
+            totalStars: Number(data.totalStars ?? (isStudent ? 100 : 500)),
+            unlockedStickers: (data.unlockedStickers as string[]) || ['first-step'],
+            studentIdCode: (data.studentIdCode as string) || (isStudent ? `STD-${cleanUid.slice(0, 5)}` : undefined),
+            teacherIdCode: (data.teacherIdCode as string) || (!isStudent ? `TCH-${cleanUid.slice(0, 5).toUpperCase()}` : undefined),
+            googleEmail: email,
+          };
+
+          setUser(profile);
+          setIsAuthenticated(true);
+          setPendingGoogleUser(null);
+          safeSetItem('hw_box_saved_google_user', profile);
+          safeSetItem('hw_box_user', profile);
+          safeSetItem('hw_box_logged_in', 'true');
+          triggerStarBurst();
+          return;
+        }
+      } catch (e) {
+        console.warn('Check Firestore user error:', e);
+      }
+
+      // Not found in Firestore -> First time login! Prompt onboarding
+      setPendingGoogleUser({
+        uid: cleanUid,
+        email,
+        name: name || email.split('@')[0],
+        photoURL: '',
+      });
+      setIsAuthenticated(false);
+    },
+    []
   );
 
   /* ---------- Persist to storage ---------- */
@@ -467,12 +783,47 @@ export default function App() {
       }
     });
 
+    const unsubStudentRecords = subscribeToStudentRecordsFromFirestore((firestoreRecords) => {
+      if (firestoreRecords && firestoreRecords.length > 0) {
+        setStudentRecords((prev) => {
+          const map = new Map<string, StudentRecord>();
+          firestoreRecords.forEach((s) => map.set(s.id, s));
+          prev.forEach((s) => { if (!map.has(s.id)) map.set(s.id, s); });
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubExamScores = subscribeToExamScoresFromFirestore((firestoreScores) => {
+      if (firestoreScores && firestoreScores.length > 0) {
+        setExamScores((prev) => {
+          const map = new Map<string, StudentExamScore>();
+          firestoreScores.forEach((s) => map.set(s.id, s));
+          prev.forEach((s) => { if (!map.has(s.id)) map.set(s.id, s); });
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubLessons = subscribeToLessonsFromFirestore((firestoreLessons) => {
+      if (firestoreLessons && firestoreLessons.length > 0) {
+        setLessons((prev) => {
+          const map = new Map<string, QuizLesson>();
+          firestoreLessons.forEach((l) => map.set(l.id, l));
+          prev.forEach((l) => { if (!map.has(l.id)) map.set(l.id, l); });
+          return Array.from(map.values());
+        });
+      }
+    });
+
     const unsubBroadcast = subscribeToBroadcastRealtime((type, payload) => {
       if (type === 'NEW_TASK' || type === 'UPDATE_TASKS') setAssignmentTasks(payload);
       else if (type === 'NEW_HOMEWORK' || type === 'UPDATE_HOMEWORKS') setHomeworkList(payload);
       else if (type === 'NEW_EVALUATION' || type === 'UPDATE_EVALUATIONS') setEvaluations(payload);
       else if (type === 'UPDATE_STUDENT_RECORDS') setStudentRecords(payload);
       else if (type === 'UPDATE_REFLECTIONS') setReflectionTopics(payload);
+      else if (type === 'UPDATE_EXAM_SCORES') setExamScores(payload);
+      else if (type === 'UPDATE_LESSONS') setLessons(payload);
     });
 
     return () => {
@@ -480,17 +831,25 @@ export default function App() {
       if (typeof unsubHws === 'function') unsubHws();
       if (typeof unsubEvals === 'function') unsubEvals();
       if (typeof unsubReflections === 'function') unsubReflections();
+      if (typeof unsubStudentRecords === 'function') unsubStudentRecords();
+      if (typeof unsubExamScores === 'function') unsubExamScores();
+      if (typeof unsubLessons === 'function') unsubLessons();
       if (typeof unsubBroadcast === 'function') unsubBroadcast();
     };
   }, []);
 
   const handleCreateReflectionTopic = (topic: TeacherReflectionTopic) => {
+    const withOwner: TeacherReflectionTopic = {
+      ...topic,
+      teacherId: topic.teacherId || user.id,
+      authorTeacher: topic.authorTeacher || user.name,
+    };
     setReflectionTopics((prev) => {
-      const next = [topic, ...prev];
+      const next = [withOwner, ...prev];
       broadcastRealtimeUpdate('UPDATE_REFLECTIONS', next);
       return next;
     });
-    saveReflectionToFirestore(topic);
+    saveReflectionToFirestore(withOwner);
   };
 
   const handleUpdateReflectionTopic = (updated: TeacherReflectionTopic) => {
@@ -508,6 +867,7 @@ export default function App() {
       broadcastRealtimeUpdate('UPDATE_REFLECTIONS', next);
       return next;
     });
+    deleteDocumentFromFirestore(REFLECTIONS_COLLECTION, topicId);
   };
 
   /* ---------- Google Sheets auto-sync ---------- */
@@ -581,35 +941,25 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [studentRecords, homeworkList, examScores, evaluations]);
 
-  /* ---------- Migration ---------- */
+  /* ---------- Migration: Clean leftover sample data so teacher accounts only have teacher-added data ---------- */
   useEffect(() => {
-    if (localStorage.getItem('hw_box_universal_grades_v4') !== 'true') {
-      localStorage.setItem('hw_box_universal_grades_v4', 'true');
-      const singleTask = sampleInitialAssignmentTasks.slice(0, 1);
-      const singleLesson = initialQuizLessons.slice(0, 1);
-      setAssignmentTasks(singleTask);
-      setLessons(singleLesson);
-      localStorage.setItem('hw_box_assignment_tasks_single', JSON.stringify(singleTask));
-      localStorage.setItem('hw_box_lessons_single', JSON.stringify(singleLesson));
-      localStorage.setItem('hw_box_assignment_tasks', JSON.stringify(singleTask));
-      localStorage.setItem('hw_box_lessons', JSON.stringify(singleLesson));
-      localStorage.setItem('hw_box_exam_scores', JSON.stringify(sampleStudentExamScores));
-      localStorage.setItem('hw_box_student_records', JSON.stringify(sampleStudentRecords));
-      localStorage.setItem('hw_box_stickers', JSON.stringify(initialStickers));
+    if (localStorage.getItem('hw_box_clean_teacher_v5') !== 'true') {
+      localStorage.setItem('hw_box_clean_teacher_v5', 'true');
+      const sampleTaskIds = new Set(sampleInitialAssignmentTasks.map((t) => t.id));
+      const sampleHwIds = new Set(sampleInitialHomeworks.map((h) => h.id));
+      const sampleEvalIds = new Set(sampleInitialEvaluations.map((e) => e.id));
+      const sampleLessonIds = new Set(initialQuizLessons.map((l) => l.id));
+      const sampleExamIds = new Set(sampleStudentExamScores.map((s) => s.id));
+      const sampleStudentIds = new Set(sampleStudentRecords.map((s) => s.id));
+      const sampleTopicIds = new Set(sampleReflectionTopics.map((t) => t.id));
 
-      const savedUserStr = localStorage.getItem('hw_box_user');
-      if (savedUserStr) {
-        try {
-          const u = JSON.parse(savedUserStr);
-          if (u.classRoom && u.classRoom.includes('ม.3')) {
-            u.classRoom = u.classRoom.replace('ม.3/', 'ห้อง ').replace('ม.3', 'ห้อง 1');
-            setUser(u);
-            localStorage.setItem('hw_box_user', JSON.stringify(u));
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
+      setAssignmentTasks((prev) => prev.filter((t) => !sampleTaskIds.has(t.id)));
+      setHomeworkList((prev) => prev.filter((h) => !sampleHwIds.has(h.id)));
+      setEvaluations((prev) => prev.filter((e) => !sampleEvalIds.has(e.id)));
+      setLessons((prev) => prev.filter((l) => !sampleLessonIds.has(l.id)));
+      setExamScores((prev) => prev.filter((s) => !sampleExamIds.has(s.id)));
+      setStudentRecords((prev) => prev.filter((s) => !sampleStudentIds.has(s.id)));
+      setReflectionTopics((prev) => prev.filter((t) => !sampleTopicIds.has(t.id)));
     }
   }, []);
 
@@ -659,31 +1009,33 @@ export default function App() {
     saveUserProfileToFirestore(newUser);
 
     if (newUser.role === 'student') {
+      const newRecord: StudentRecord = {
+        id: newUser.id,
+        name: newUser.name,
+        studentIdCode: newUser.studentIdCode || 'STD-' + Math.floor(1000 + Math.random() * 9000),
+        classRoom: newUser.classRoom || 'ห้อง 1',
+        studentNo: newUser.studentNo || '01',
+        avatar: newUser.avatar || '🧑‍🎓',
+        totalStars: newUser.totalStars || 100,
+        unlockedStickers: newUser.unlockedStickers || ['first-step'],
+        awardedBadges: [],
+        homeworkCount: 0,
+        quizScores: {},
+      };
       setStudentRecords((prev) => {
         const exists = prev.some(
           (s) => s.id === newUser.id ||
             (newUser.studentIdCode && s.studentIdCode === newUser.studentIdCode)
         );
         if (!exists) {
-          const newRecord: StudentRecord = {
-            id: newUser.id,
-            name: newUser.name,
-            studentIdCode: newUser.studentIdCode || 'STD-' + Math.floor(1000 + Math.random() * 9000),
-            classRoom: newUser.classRoom || 'ห้อง 1',
-            studentNo: newUser.studentNo || '01',
-            avatar: newUser.avatar || '🧑‍🎓',
-            totalStars: newUser.totalStars || 100,
-            unlockedStickers: newUser.unlockedStickers || ['first-step'],
-            awardedBadges: [],
-            homeworkCount: 0,
-            quizScores: {},
-          };
           const updated = [...prev, newRecord];
           safeSetItem('hw_box_student_records', updated);
+          broadcastRealtimeUpdate('UPDATE_STUDENT_RECORDS', updated);
           return updated;
         }
         return prev;
       });
+      saveStudentRecordToFirestore(newRecord);
     }
     triggerStarBurst();
   };
@@ -715,12 +1067,17 @@ export default function App() {
   };
 
   const handleCreateAssignmentTask = (newTask: AssignmentTask) => {
+    const taskWithOwner: AssignmentTask = {
+      ...newTask,
+      teacherId: newTask.teacherId || user.id,
+      authorTeacher: newTask.authorTeacher || user.name,
+    };
     setAssignmentTasks((prev) => {
-      const next = [newTask, ...prev];
+      const next = [taskWithOwner, ...prev];
       broadcastRealtimeUpdate('UPDATE_TASKS', next);
       return next;
     });
-    saveTaskToFirestore(newTask);
+    saveTaskToFirestore(taskWithOwner);
     triggerFestiveConfetti();
   };
 
@@ -739,6 +1096,7 @@ export default function App() {
       broadcastRealtimeUpdate('UPDATE_TASKS', next);
       return next;
     });
+    deleteDocumentFromFirestore(TASKS_COLLECTION, taskId);
   };
 
   const handleSubmitHomework = (newHw: Homework) => {
@@ -771,6 +1129,7 @@ export default function App() {
       broadcastRealtimeUpdate('UPDATE_HOMEWORKS', next);
       return next;
     });
+    deleteDocumentFromFirestore(HOMEWORKS_COLLECTION, id);
   };
 
   const handleSubmitEvaluation = (newEval: TeacherEvaluation) => {
@@ -807,6 +1166,7 @@ export default function App() {
       broadcastRealtimeUpdate('UPDATE_EVALUATIONS', next);
       return next;
     });
+    deleteDocumentFromFirestore(EVALUATIONS_COLLECTION, evalId);
   };
 
   const handleAwardStickerToStudent = (
@@ -858,12 +1218,27 @@ export default function App() {
     }
   };
 
+  const handleAddStudentRecord = (newStudent: StudentRecord) => {
+    const withTeacher: StudentRecord = {
+      ...newStudent,
+      teacherId: newStudent.teacherId || user.id,
+    };
+    setStudentRecords((prev) => {
+      const next = [withTeacher, ...prev];
+      safeSetItem('hw_box_student_records', next);
+      broadcastRealtimeUpdate('UPDATE_STUDENT_RECORDS', next);
+      return next;
+    });
+    saveStudentRecordToFirestore(withTeacher);
+  };
+
   const handleUpdateStudentRecord = (updatedStudent: StudentRecord) => {
     setStudentRecords((prev) => {
       const next = prev.map((s) => (s.id === updatedStudent.id ? updatedStudent : s));
       broadcastRealtimeUpdate('UPDATE_STUDENT_RECORDS', next);
       return next;
     });
+    saveStudentRecordToFirestore(updatedStudent);
     if (user.id === updatedStudent.id) {
       setUser((prev) => ({ ...prev, totalStars: updatedStudent.totalStars }));
     }
@@ -876,19 +1251,40 @@ export default function App() {
       broadcastRealtimeUpdate('UPDATE_STUDENT_RECORDS', next);
       return next;
     });
+    deleteDocumentFromFirestore(STUDENT_RECORDS_COLLECTION, studentId);
   };
 
   const handleCreateLesson = (newLesson: QuizLesson) => {
-    setLessons((prev) => [newLesson, ...prev]);
+    const lessonWithOwner: QuizLesson = {
+      ...newLesson,
+      teacherId: newLesson.teacherId || user.id,
+      authorTeacher: newLesson.authorTeacher || user.name,
+    };
+    setLessons((prev) => {
+      const next = [lessonWithOwner, ...prev];
+      broadcastRealtimeUpdate('UPDATE_LESSONS', next);
+      return next;
+    });
+    saveLessonToFirestore(lessonWithOwner);
     triggerFestiveConfetti();
   };
 
   const handleUpdateLesson = (updatedLesson: QuizLesson) => {
-    setLessons((prev) => prev.map((l) => (l.id === updatedLesson.id ? updatedLesson : l)));
+    setLessons((prev) => {
+      const next = prev.map((l) => (l.id === updatedLesson.id ? updatedLesson : l));
+      broadcastRealtimeUpdate('UPDATE_LESSONS', next);
+      return next;
+    });
+    saveLessonToFirestore(updatedLesson);
   };
 
   const handleDeleteLesson = (lessonId: string) => {
-    setLessons((prev) => prev.filter((l) => l.id !== lessonId));
+    setLessons((prev) => {
+      const next = prev.filter((l) => l.id !== lessonId);
+      broadcastRealtimeUpdate('UPDATE_LESSONS', next);
+      return next;
+    });
+    deleteDocumentFromFirestore(LESSONS_COLLECTION, lessonId);
   };
 
   const handleFinishQuiz = (lessonId: string, score: number, _earnedStars: number) => {
@@ -914,9 +1310,10 @@ export default function App() {
 
     const newScoreEntry: StudentExamScore = {
       id: 'exam-' + Date.now(),
+      teacherId: targetLesson?.teacherId,
       studentId: user.id,
       studentName: user.name,
-      studentNo: user.studentNo || '12',
+      studentNo: user.studentNo || '1',
       studentClass: user.classRoom || 'ห้อง 1',
       studentAvatar: user.avatar,
       lessonId,
@@ -926,7 +1323,32 @@ export default function App() {
       submittedAt: new Date().toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }),
     };
 
-    setExamScores((prev) => [newScoreEntry, ...prev]);
+    setExamScores((prev) => {
+      const next = [newScoreEntry, ...prev];
+      broadcastRealtimeUpdate('UPDATE_EXAM_SCORES', next);
+      return next;
+    });
+    saveExamScoreToFirestore(newScoreEntry);
+
+    setStudentRecords((prev) => {
+      const next = prev.map((s) => {
+        if (s.id === user.id) {
+          const updated: StudentRecord = {
+            ...s,
+            quizScores: {
+              ...(s.quizScores || {}),
+              [lessonId]: Math.max(s.quizScores?.[lessonId] ?? 0, score),
+            },
+          };
+          saveStudentRecordToFirestore(updated);
+          return updated;
+        }
+        return s;
+      });
+      broadcastRealtimeUpdate('UPDATE_STUDENT_RECORDS', next);
+      return next;
+    });
+
     if (lessonId === 'ev-technology' && score >= 8) checkAndUnlockSticker('ev-master');
     if (score === 10) checkAndUnlockSticker('quiz-champion');
   };
@@ -977,6 +1399,205 @@ export default function App() {
     handleLogin(newUser);
   };
 
+  /* ---------- Scoped Data per Teacher Account & Classrooms ---------- */
+  const isTeacherRole = user.role === 'teacher';
+
+  const visibleAssignmentTasks = isTeacherRole
+    ? assignmentTasks.filter(
+        (t) => t.teacherId === user.id || (!t.teacherId && t.authorTeacher === user.name)
+      )
+    : assignmentTasks;
+
+  const teacherTaskIds = new Set(visibleAssignmentTasks.map((t) => t.id));
+
+  const visibleLessons = isTeacherRole
+    ? lessons.filter(
+        (l) => l.teacherId === user.id || (!l.teacherId && l.authorTeacher === user.name)
+      )
+    : lessons;
+
+  const teacherLessonIds = new Set(visibleLessons.map((l) => l.id));
+
+  const visibleReflectionTopics = isTeacherRole
+    ? reflectionTopics.filter(
+        (t) => t.teacherId === user.id || (!t.teacherId && t.authorTeacher === user.name)
+      )
+    : reflectionTopics;
+
+  const teacherTopicIds = new Set(visibleReflectionTopics.map((t) => t.id));
+
+  const teacherAddedStudents = isTeacherRole
+    ? studentRecords.filter((s) => s.teacherId === user.id)
+    : [];
+
+  // Determine the classrooms active in this teacher's account
+  // Note: A brand-new teacher account with no added tasks/lessons/topics/students/classes starts with 0 classrooms
+  const teacherHasAddedContent =
+    visibleAssignmentTasks.length > 0 ||
+    visibleLessons.length > 0 ||
+    visibleReflectionTopics.length > 0 ||
+    teacherAddedStudents.length > 0 ||
+    (Array.isArray(user.teachingClasses) && user.teachingClasses.some((c) => c && c.trim() !== '' && c.trim() !== 'ทุกห้อง'));
+
+  const teacherClassrooms = (() => {
+    if (!isTeacherRole || !teacherHasAddedContent) return [] as string[];
+    const set = new Set<string>();
+    const addRoomRaw = (raw?: string) => {
+      if (!raw) return;
+      raw.split(',').forEach((part) => {
+        const clean = part.trim();
+        if (clean && clean !== 'ทุกห้อง' && clean !== 'all') {
+          set.add(clean);
+        }
+      });
+    };
+    (user.teachingClasses || []).forEach(addRoomRaw);
+    visibleAssignmentTasks.forEach((t) => addRoomRaw(t.targetClass));
+    visibleLessons.forEach((l) => addRoomRaw(l.targetClass));
+    visibleReflectionTopics.forEach((t) => addRoomRaw(t.targetClass));
+    teacherAddedStudents.forEach((s) => addRoomRaw(s.classRoom));
+    return Array.from(set);
+  })();
+
+  const matchesTeacherClassroom = (studentClass?: string) => {
+    if (!studentClass || teacherClassrooms.length === 0) return false;
+    return teacherClassrooms.some((room) => isClassMatching(studentClass, room));
+  };
+
+  const visibleHomeworkList = isTeacherRole
+    ? homeworkList.filter(
+        (h) =>
+          h.teacherId === user.id ||
+          (h.taskId && teacherTaskIds.has(h.taskId)) ||
+          matchesTeacherClassroom(h.studentClass)
+      )
+    : homeworkList;
+
+  const visibleExamScores = isTeacherRole
+    ? examScores.filter(
+        (s) =>
+          s.teacherId === user.id ||
+          teacherLessonIds.has(s.lessonId) ||
+          matchesTeacherClassroom(s.studentClass)
+      )
+    : examScores;
+
+  const visibleEvaluations = isTeacherRole
+    ? evaluations.filter(
+        (e) =>
+          e.teacherId === user.id ||
+          (e.topicId && teacherTopicIds.has(e.topicId)) ||
+          matchesTeacherClassroom(e.studentClass)
+      )
+    : evaluations;
+
+  const teacherInteractedStudentIds = new Set<string>([
+    ...visibleHomeworkList.map((h) => h.studentId),
+    ...visibleExamScores.map((s) => s.studentId),
+    ...visibleEvaluations.map((e) => e.studentId),
+  ]);
+
+  const visibleStudentRecords = (() => {
+    const baseList = isTeacherRole
+      ? studentRecords.filter(
+          (s) =>
+            s.teacherId === user.id ||
+            teacherInteractedStudentIds.has(s.id) ||
+            matchesTeacherClassroom(s.classRoom)
+        )
+      : studentRecords;
+
+    const map = new Map<string, StudentRecord>();
+    baseList.forEach((s) => map.set(s.id, { ...s }));
+
+    // Ensure every real student who submitted homework, took a quiz, or posted a reflection in these classrooms is included
+    const ensureStudentFromActivity = (
+      studentId: string,
+      studentName: string,
+      studentClass: string,
+      studentNo?: string,
+      studentAvatar?: string
+    ) => {
+      if (!studentId && !studentName) return;
+      const existing =
+        (studentId && map.get(studentId)) ||
+        Array.from(map.values()).find(
+          (s) =>
+            s.name.toLowerCase() === (studentName || '').toLowerCase() &&
+            isClassMatching(s.classRoom, studentClass)
+        );
+      if (!existing) {
+        const id = studentId || `std-${studentName}-${studentClass}`;
+        const cleanClass = studentClass || teacherClassrooms[0] || 'ม.2/1';
+        const cleanNo = studentNo || String(map.size + 1);
+        map.set(id, {
+          id,
+          teacherId: user.id,
+          name: studentName || 'นักเรียน',
+          studentIdCode: `STD-${cleanClass.replace(/[^0-9]/g, '') || '201'}${String(cleanNo).padStart(2, '0')}`,
+          classRoom: cleanClass,
+          studentNo: String(cleanNo),
+          avatar: studentAvatar || 'student-boy-glasses',
+          totalStars: 100,
+          unlockedStickers: ['first-step'],
+          awardedBadges: [],
+          homeworkCount: 0,
+          quizScores: {},
+        });
+      }
+    };
+
+    if (!isTeacherRole || teacherHasAddedContent || teacherInteractedStudentIds.size > 0) {
+      visibleHomeworkList.forEach((h) =>
+        ensureStudentFromActivity(h.studentId, h.studentName, h.studentClass, h.studentNo, h.studentAvatar)
+      );
+      visibleExamScores.forEach((s) =>
+        ensureStudentFromActivity(s.studentId, s.studentName, s.studentClass, s.studentNo, s.studentAvatar)
+      );
+      visibleEvaluations.forEach((e) =>
+        ensureStudentFromActivity(e.studentId, e.studentName, e.studentClass, e.studentNo, e.studentAvatar)
+      );
+    }
+
+    // Enrich each student record with real counts & scores from actual system usage
+    return Array.from(map.values()).map((student) => {
+      const myHws = visibleHomeworkList.filter(
+        (h) =>
+          h.studentId === student.id ||
+          (h.studentName && h.studentName.toLowerCase() === student.name.toLowerCase())
+      );
+      const myExams = visibleExamScores.filter(
+        (e) =>
+          e.studentId === student.id ||
+          (e.studentName && e.studentName.toLowerCase() === student.name.toLowerCase())
+      );
+      const myEvals = visibleEvaluations.filter(
+        (ev) =>
+          ev.studentId === student.id ||
+          (ev.studentName && ev.studentName.toLowerCase() === student.name.toLowerCase())
+      );
+
+      const computedQuizScores: Record<string, number> = { ...(student.quizScores || {}) };
+      myExams.forEach((ex) => {
+        computedQuizScores[ex.lessonId] = Math.max(computedQuizScores[ex.lessonId] ?? 0, ex.score);
+      });
+
+      const realHwCount = Math.max(student.homeworkCount || 0, myHws.length);
+      const activityStars =
+        myHws.reduce((sum, h) => sum + (h.earnedStars || 50), 0) +
+        myExams.reduce((sum, e) => sum + e.score * 10, 0) +
+        myEvals.length * 20 +
+        (student.awardedBadges || []).reduce((sum, b) => sum + (b.starsAdded || 0), 0);
+
+      return {
+        ...student,
+        homeworkCount: realHwCount,
+        quizScores: computedQuizScores,
+        totalStars: Math.max(student.totalStars || 0, activityStars),
+      };
+    });
+  })();
+
   /* ---------- Render ---------- */
   if (!authReady) {
     return (
@@ -1000,10 +1621,7 @@ export default function App() {
     return (
       <LoginView
         onLogin={handleLogin}
-        onGoogleSignIn={handleGoogleSignIn}
-        initialRole={user.role}
         studentRecords={studentRecords}
-        onRegisterStudent={handleRegisterStudent}
       />
     );
   }
@@ -1022,16 +1640,16 @@ export default function App() {
           activeTab={activeTab}
           onSelectTab={setActiveTab}
           userRole={user.role}
-          pendingHomeworkCount={homeworkList.filter((h) => h.status === 'pending').length}
+          pendingHomeworkCount={visibleHomeworkList.filter((h) => h.status === 'pending').length}
         />
 
         <main className="mb-10">
           {activeTab === 'homework' && (
             <HomeworkView
               currentUser={user}
-              homeworkList={homeworkList}
-              assignmentTasks={assignmentTasks}
-              studentRecords={studentRecords}
+              homeworkList={visibleHomeworkList}
+              assignmentTasks={visibleAssignmentTasks}
+              studentRecords={visibleStudentRecords}
               onSubmitHomework={handleSubmitHomework}
               onUpdateHomework={handleUpdateHomework}
               onDeleteHomework={handleDeleteHomework}
@@ -1045,8 +1663,8 @@ export default function App() {
           {activeTab === 'quiz' && (
             <QuizView
               currentUser={user}
-              lessons={lessons}
-              examScores={examScores}
+              lessons={visibleLessons}
+              examScores={visibleExamScores}
               onCreateLesson={handleCreateLesson}
               onUpdateLesson={handleUpdateLesson}
               onDeleteLesson={handleDeleteLesson}
@@ -1059,11 +1677,12 @@ export default function App() {
             <ScorebookView
               currentUser={user}
               stickers={stickers}
-              quizLessons={lessons}
-              homeworkList={homeworkList}
-              studentRecords={studentRecords}
+              quizLessons={visibleLessons}
+              homeworkList={visibleHomeworkList}
+              studentRecords={visibleStudentRecords}
               onAwardStickerToStudent={handleAwardStickerToStudent}
               onUpdateStudentRecord={handleUpdateStudentRecord}
+              onAddStudent={handleAddStudentRecord}
               onOpenGoogleSheets={() => setIsGoogleSheetsModalOpen(true)}
             />
           )}
@@ -1071,8 +1690,8 @@ export default function App() {
           {activeTab === 'reflection' && (
             <TeacherEvaluationView
               currentUser={user}
-              evaluations={evaluations}
-              topics={reflectionTopics}
+              evaluations={visibleEvaluations}
+              topics={visibleReflectionTopics}
               onSubmitEvaluation={handleSubmitEvaluation}
               onTeacherReply={handleTeacherReply}
               onDeleteEvaluation={handleDeleteEvaluation}
@@ -1087,12 +1706,15 @@ export default function App() {
           {activeTab === 'dashboard' && user.role === 'teacher' && (
             <TeacherDashboardView
               currentUser={user}
-              studentRecords={studentRecords}
-              homeworkList={homeworkList}
-              quizLessons={lessons}
-              examScores={examScores}
-              evaluations={evaluations}
+              studentRecords={visibleStudentRecords}
+              homeworkList={visibleHomeworkList}
+              assignmentTasks={visibleAssignmentTasks}
+              quizLessons={visibleLessons}
+              examScores={visibleExamScores}
+              evaluations={visibleEvaluations}
+              reflectionTopics={visibleReflectionTopics}
               onUpdateStudentRecord={handleUpdateStudentRecord}
+              onAddStudent={handleAddStudentRecord}
               onAwardStars={handleAwardStars}
               onOpenGoogleSheets={() => setIsGoogleSheetsModalOpen(true)}
               onDeleteStudent={handleDeleteStudentRecord}
@@ -1122,10 +1744,10 @@ export default function App() {
       <GoogleSheetsModal
         isOpen={isGoogleSheetsModalOpen}
         onClose={() => setIsGoogleSheetsModalOpen(false)}
-        studentRecords={studentRecords}
-        homeworkList={homeworkList}
-        examScores={examScores}
-        evaluations={evaluations}
+        studentRecords={visibleStudentRecords}
+        homeworkList={visibleHomeworkList}
+        examScores={visibleExamScores}
+        evaluations={visibleEvaluations}
       />
 
       <CelebrationModal

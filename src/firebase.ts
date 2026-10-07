@@ -11,22 +11,25 @@ import {
   setPersistence,
   type User as FirebaseUser,
 } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import appletConfig from '../firebase-applet-config.json';
 
 /* ------------------------------------------------------------------
-   1) อ่านค่า config จาก Environment Variables ของ Vite
-      ตัวแปรทุกตัวต้องขึ้นต้นด้วย VITE_ ถึงจะถูก inject เข้า bundle
+   1) อ่านค่า config จาก Environment Variables ของ Vite (พร้อม fallback)
 ------------------------------------------------------------------ */
 const env = import.meta.env;
 
 const firebaseConfig: FirebaseOptions = {
-  apiKey: env.VITE_FIREBASE_API_KEY,
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: env.VITE_FIREBASE_MSG_SENDER_ID,
-  appId: env.VITE_FIREBASE_APP_ID,
+  apiKey: env.VITE_FIREBASE_API_KEY || appletConfig.apiKey,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || appletConfig.authDomain,
+  projectId: env.VITE_FIREBASE_PROJECT_ID || appletConfig.projectId,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || appletConfig.storageBucket,
+  messagingSenderId: env.VITE_FIREBASE_MSG_SENDER_ID || appletConfig.messagingSenderId,
+  appId: env.VITE_FIREBASE_APP_ID || appletConfig.appId,
 };
+
+export const firestoreDatabaseId: string | undefined =
+  env.VITE_FIREBASE_DATABASE_ID || (appletConfig as any).firestoreDatabaseId;
 
 /* ------------------------------------------------------------------
    2) เตือนตั้งแต่ตอน dev ถ้าค่าขาด จะได้ไม่ไปงงตอน login ไม่ติด
@@ -44,12 +47,28 @@ if (missingKeys.length > 0) {
 }
 
 /* ------------------------------------------------------------------
-   3) init แบบกัน HMR สร้าง app ซ้ำ
+   3) init แบบกัน HMR สร้าง app ซ้ำ + เชื่อมต่อ Firestore Database ID จริง
 ------------------------------------------------------------------ */
 export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const db = firestoreDatabaseId
+  ? getFirestore(app, firestoreDatabaseId)
+  : getFirestore(app);
+
+export async function testConnection(): Promise<boolean> {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+    return true;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error('Please check your Firebase configuration.');
+      return false;
+    }
+    return true;
+  }
+}
+testConnection();
 
 /* ------------------------------------------------------------------
    4) Google provider — ไม่ล็อกโดเมน ใครมีบัญชี Google ก็เข้าได้

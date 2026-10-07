@@ -51,6 +51,7 @@ interface ScorebookViewProps {
     note: string
   ) => void;
   onUpdateStudentRecord?: (updatedStudent: StudentRecord) => void;
+  onAddStudent?: (student: StudentRecord) => void;
   onOpenGoogleSheets?: () => void;
 }
 
@@ -62,9 +63,44 @@ export const ScorebookView: React.FC<ScorebookViewProps> = ({
   studentRecords,
   onAwardStickerToStudent,
   onUpdateStudentRecord,
+  onAddStudent,
   onOpenGoogleSheets,
 }) => {
   const [inspectSticker, setInspectSticker] = useState<StickerAchievement | null>(null);
+
+  // Add Student State
+  const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
+  const [newStudentName, setNewStudentName] = useState('');
+  const [newStudentClass, setNewStudentClass] = useState(
+    currentUser.teachingClasses?.[0] || 'ม.2/1'
+  );
+  const [newStudentNo, setNewStudentNo] = useState('');
+
+  const handleAddStudentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStudentName.trim() || !onAddStudent) return;
+    const cleanNo = newStudentNo.trim() || String(studentRecords.length + 1);
+    const cleanClass = newStudentClass.trim() || 'ม.2/1';
+    const created: StudentRecord = {
+      id: 'std-' + Date.now(),
+      teacherId: currentUser.id,
+      name: newStudentName.trim(),
+      studentIdCode: `STD-${cleanClass.replace(/[^0-9]/g, '') || '201'}${cleanNo.padStart(2, '0')}`,
+      classRoom: cleanClass,
+      studentNo: cleanNo,
+      avatar: 'student-boy-glasses',
+      totalStars: 0,
+      unlockedStickers: [],
+      awardedBadges: [],
+      homeworkCount: 0,
+      quizScores: {},
+    };
+    onAddStudent(created);
+    setNewStudentName('');
+    setNewStudentNo('');
+    setIsAddStudentOpen(false);
+    triggerStarBurst();
+  };
 
   // Teacher Award Modal State
   const [isAwardModalOpen, setIsAwardModalOpen] = useState(false);
@@ -251,7 +287,7 @@ export const ScorebookView: React.FC<ScorebookViewProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {onOpenGoogleSheets && (
                 <button
                   type="button"
@@ -261,6 +297,16 @@ export const ScorebookView: React.FC<ScorebookViewProps> = ({
                 >
                   <GoogleSheetsIcon className="w-4 h-4" />
                   <span>Google Sheets</span>
+                </button>
+              )}
+              {onAddStudent && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddStudentOpen((v) => !v)}
+                  className="px-4 py-3 bg-white hover:bg-amber-50 text-zinc-950 font-black text-sm rounded-xl sketch-btn flex items-center gap-2 cursor-pointer shadow-[3px_3px_0px_#18181b] shrink-0"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>เพิ่มนักเรียน</span>
                 </button>
               )}
               <button
@@ -330,6 +376,56 @@ export const ScorebookView: React.FC<ScorebookViewProps> = ({
       {/* TEACHER VIEW: STUDENT ROSTER & STICKER AWARDS WITH EDITABLE SCORE FIELDS */}
       {isTeacher ? (
         <div className="space-y-4">
+          {isAddStudentOpen && (
+            <form
+              onSubmit={handleAddStudentSubmit}
+              className="bg-white sketch-border rounded-[18px_12px_16px_14px] p-4 shadow-[4px_4px_0px_#18181b] space-y-3"
+            >
+              <div className="text-sm font-black text-zinc-900">เพิ่มรายชื่อนักเรียนใหม่ในระบบ</div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <input
+                  type="text"
+                  required
+                  value={newStudentName}
+                  onChange={(e) => setNewStudentName(e.target.value)}
+                  placeholder="ชื่อ-นามสกุลนักเรียน *"
+                  className="w-full px-3 py-2 bg-zinc-50 rounded-xl border-2 border-zinc-300 text-xs font-bold"
+                />
+                <input
+                  type="text"
+                  required
+                  value={newStudentClass}
+                  onChange={(e) => setNewStudentClass(e.target.value)}
+                  placeholder="ชั้นเรียน เช่น ม.2/1 *"
+                  className="w-full px-3 py-2 bg-zinc-50 rounded-xl border-2 border-zinc-300 text-xs font-bold"
+                />
+                <input
+                  type="text"
+                  required
+                  value={newStudentNo}
+                  onChange={(e) => setNewStudentNo(e.target.value)}
+                  placeholder="เลขที่ เช่น 1 *"
+                  className="w-full px-3 py-2 bg-zinc-50 rounded-xl border-2 border-zinc-300 text-xs font-bold"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddStudentOpen(false)}
+                  className="px-3.5 py-1.5 bg-zinc-100 text-zinc-700 text-xs font-bold rounded-xl border border-zinc-300 cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-emerald-400 hover:bg-emerald-500 text-zinc-950 text-xs font-black rounded-xl border-2 border-zinc-900 cursor-pointer shadow-[2px_2px_0px_#000]"
+                >
+                  บันทึกข้อมูลนักเรียน
+                </button>
+              </div>
+            </form>
+          )}
+
           {/* Filter & View Mode Bar */}
           <div className="bg-white sketch-border rounded-[18px_12px_16px_14px] p-4 shadow-[4px_4px_0px_#18181b] flex flex-col md:flex-row items-center justify-between gap-3">
             <div className="relative w-full md:w-72">
@@ -398,7 +494,14 @@ export const ScorebookView: React.FC<ScorebookViewProps> = ({
           </div>
 
           {/* VIEW MODE: TABLE (SPREADSHEET SCORE ENTRY) */}
-          {viewMode === 'table' ? (
+          {filteredStudents.length === 0 ? (
+            <div className="bg-white sketch-border rounded-[22px_16px_20px_18px] p-8 text-center shadow-[4px_4px_0px_#18181b]">
+              <p className="font-black text-zinc-800 text-base">ยังไม่มีข้อมูลนักเรียนในระบบ</p>
+              <p className="text-xs font-semibold text-zinc-500 mt-1">
+                คุณครูสามารถคลิกปุ่ม "เพิ่มนักเรียน" ด้านบนเพื่อเพิ่มข้อมูลนักเรียนเข้าสู่ระบบเองได้ทันที
+              </p>
+            </div>
+          ) : viewMode === 'table' ? (
             <div className="bg-white sketch-border rounded-[22px_16px_20px_18px] p-5 shadow-[5px_5px_0px_#18181b] overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>

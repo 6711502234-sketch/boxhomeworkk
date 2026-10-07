@@ -6,8 +6,13 @@ export interface UserProfile {
   role: UserRole;
   studentIdCode?: string; // e.g. "STD-670301" or "รหัสนักเรียน 5 หลัก"
   teacherIdCode?: string; // e.g. "TCH-301"
-  classRoom: string; // e.g. "ห้อง 1", "ห้อง 2"
+  classRoom: string; // e.g. "ม.2/3", "ห้อง 1"
   studentNo: string; // e.g. "12"
+  gradeLevel?: string; // e.g. "ม.2"
+  room?: string; // e.g. "3"
+  subjectDepartment?: string; // e.g. "วิทยาศาสตร์และเทคโนโลยี"
+  teachingSubject?: string; // e.g. "วิทยาการคำนวณ"
+  teachingClasses?: string[]; // e.g. ["ม.2/1", "ม.2/3"]
   avatar: string; // emoji or avatar identifier
   totalStars: number;
   unlockedStickers: string[]; // sticker IDs
@@ -16,6 +21,11 @@ export interface UserProfile {
 }
 
 export type HomeworkStatus = 'pending' | 'reviewed' | 'needs_fix' | 'graded';
+
+export type AssessmentType =
+  | 'Assessment as Learning'
+  | 'Assessment for Learning'
+  | 'Assessment of Learning';
 
 export interface AssignmentTask {
   id: string;
@@ -28,6 +38,7 @@ export interface AssignmentTask {
   createdAt: string;
   updatedAt?: string;
   authorTeacher: string;
+  teacherId?: string;
   attachmentName?: string;
   attachmentLink?: string;
   attachmentData?: string; // base64 / data URL for PDF, JPG, PNG, DOCX
@@ -39,6 +50,7 @@ export interface AssignmentTask {
 export interface Homework {
   id: string;
   taskId?: string; // ID of the AssignmentTask if linked
+  teacherId?: string;
   title: string;
   subject: string;
   description: string;
@@ -65,10 +77,12 @@ export interface Homework {
 
 export interface TeacherReflectionTopic {
   id: string;
+  assessmentType?: AssessmentType;
   title: string;
   promptQuestion: string;
   targetClass: string; // e.g. "ทุกห้อง", "ห้อง 1", "ห้อง 2"
   authorTeacher: string;
+  teacherId?: string;
   teacherAvatar?: string;
   createdAt: string;
   pinned?: boolean;
@@ -78,6 +92,8 @@ export interface TeacherEvaluation {
   id: string;
   topicId?: string; // which reflection topic this feedback responds to
   topicTitle?: string;
+  assessmentType?: AssessmentType;
+  teacherId?: string;
   studentId: string;
   studentName: string;
   studentClass: string;
@@ -113,6 +129,7 @@ export interface QuizLesson {
   subject?: string;
   targetClass?: string;
   authorTeacher?: string;
+  teacherId?: string;
   createdAt?: string;
   dueDate?: string;
   timeLimitMinutes?: number;
@@ -123,6 +140,7 @@ export interface QuizLesson {
 
 export interface StudentExamScore {
   id: string;
+  teacherId?: string;
   studentId: string;
   studentName: string;
   studentClass: string;
@@ -165,6 +183,7 @@ export interface AwardedBadgeItem {
 
 export interface StudentRecord {
   id: string;
+  teacherId?: string;
   name: string;
   studentIdCode: string;
   classRoom: string;

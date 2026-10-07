@@ -1,14 +1,18 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   UserProfile,
   StudentRecord,
   Homework,
+  AssignmentTask,
   QuizLesson,
   StudentExamScore,
-  TeacherEvaluation
+  TeacherEvaluation,
+  TeacherReflectionTopic,
 } from '../types';
 import { AvatarDisplay } from './DoodleAvatars';
+import { DoodleStar } from './DoodleIcons';
 import { triggerFestiveConfetti, triggerStarBurst } from '../utils/confetti';
+import { isClassMatching } from '../utils/classMatching';
 import { GoogleSheetsIcon } from './GoogleSheetsModal';
 import {
   ResponsiveContainer,
@@ -42,7 +46,8 @@ import {
   AlertCircle,
   MessageSquare,
   Heart,
-  Trash2
+  Trash2,
+  Plus
 } from 'lucide-react';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 
@@ -50,10 +55,13 @@ interface TeacherDashboardViewProps {
   currentUser: UserProfile;
   studentRecords: StudentRecord[];
   homeworkList: Homework[];
+  assignmentTasks?: AssignmentTask[];
   quizLessons: QuizLesson[];
   examScores: StudentExamScore[];
   evaluations: TeacherEvaluation[];
+  reflectionTopics?: TeacherReflectionTopic[];
   onUpdateStudentRecord?: (student: StudentRecord) => void;
+  onAddStudent?: (student: StudentRecord) => void;
   onAwardStars?: (stars: number, reason: string) => void;
   onOpenGoogleSheets?: () => void;
   onDeleteStudent?: (studentId: string) => void;
@@ -63,10 +71,13 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
   currentUser,
   studentRecords,
   homeworkList,
+  assignmentTasks = [],
   quizLessons,
   examScores,
   evaluations,
+  reflectionTopics = [],
   onUpdateStudentRecord,
+  onAddStudent,
   onAwardStars,
   onOpenGoogleSheets,
   onDeleteStudent,
@@ -74,6 +85,41 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
   const [classFilter, setClassFilter] = useState('all');
+
+  // Add Student State
+  const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
+  const [newStudentName, setNewStudentName] = useState('');
+  const [newStudentClass, setNewStudentClass] = useState(
+    currentUser.teachingClasses?.[0] || 'ม.2/1'
+  );
+  const [newStudentNo, setNewStudentNo] = useState('');
+
+  const handleAddStudentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStudentName.trim() || !onAddStudent) return;
+    const cleanNo = newStudentNo.trim() || String(studentRecords.length + 1);
+    const cleanClass = newStudentClass.trim() || 'ม.2/1';
+    const created: StudentRecord = {
+      id: 'std-' + Date.now(),
+      teacherId: currentUser.id,
+      name: newStudentName.trim(),
+      studentIdCode: `STD-${cleanClass.replace(/[^0-9]/g, '') || '201'}${cleanNo.padStart(2, '0')}`,
+      classRoom: cleanClass,
+      studentNo: cleanNo,
+      avatar: 'student-boy-glasses',
+      totalStars: 0,
+      unlockedStickers: [],
+      awardedBadges: [],
+      homeworkCount: 0,
+      quizScores: {},
+    };
+    onAddStudent(created);
+    setSelectedStudentId(created.id);
+    setNewStudentName('');
+    setNewStudentNo('');
+    setIsAddStudentOpen(false);
+    triggerStarBurst();
+  };
 
   // Student Deletion State
   const [studentToDelete, setStudentToDelete] = useState<StudentRecord | null>(null);
@@ -112,35 +158,67 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
     }
   };
 
-  // Classrooms list
+  // Classrooms list derived from the teacher's account and real student usage in each classroom
   const classrooms = useMemo(() => {
     const set = new Set<string>();
-    studentRecords.forEach((s) => {
-      if (s.classRoom) set.add(s.classRoom);
-    });
-    return Array.from(set);
-  }, [studentRecords]);
+    const addRoom = (raw?: string) => {
+      if (!raw) return;
+      raw.split(',').forEach((part) => {
+        const clean = part.trim();
+        if (clean && clean !== 'ทุกห้อง' && clean !== 'all') {
+          set.add(clean);
+        }
+      });
+    };
+    (currentUser.teachingClasses || []).forEach(addRoom);
+    assignmentTasks.forEach((t) => addRoom(t.targetClass));
+    quizLessons.forEach((l) => addRoom(l.targetClass));
+    reflectionTopics.forEach((t) => addRoom(t.targetClass));
+    studentRecords.forEach((s) => addRoom(s.classRoom));
+    homeworkList.forEach((h) => addRoom(h.studentClass));
+    examScores.forEach((e) => addRoom(e.studentClass));
+    evaluations.forEach((ev) => addRoom(ev.studentClass));
+    return Array.from(set).sort();
+  }, [
+    currentUser.teachingClasses,
+    assignmentTasks,
+    quizLessons,
+    reflectionTopics,
+    studentRecords,
+    homeworkList,
+    examScores,
+    evaluations,
+  ]);
 
-  // Filtered Students
-  const filteredStudents = useMemo(() => {
+  // Students belonging to the currently selected classroom (without search query)
+  const cohortStudents = useMemo(() => {
     return studentRecords.filter((s) => {
-      const matchClass = classFilter === 'all' || s.classRoom === classFilter;
+      if (classFilter === 'all') return true;
+      return isClassMatching(s.classRoom, classFilter);
+    });
+  }, [studentRecords, classFilter]);
+
+  // Filtered Students (by classroom + search query)
+  const filteredStudents = useMemo(() => {
+    return cohortStudents.filter((s) => {
       const matchSearch =
         s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.studentIdCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.studentNo.includes(searchQuery);
-      return matchClass && matchSearch;
+      return matchSearch;
     });
-  }, [studentRecords, classFilter, searchQuery]);
+  }, [cohortStudents, searchQuery]);
 
-  // Currently selected student record
+  // Currently selected student record (scoped to the selected classroom)
   const currentStudent = useMemo(() => {
     return (
-      studentRecords.find((s) => s.id === selectedStudentId) ||
-      studentRecords[0] ||
+      filteredStudents.find((s) => s.id === selectedStudentId) ||
+      cohortStudents.find((s) => s.id === selectedStudentId) ||
+      filteredStudents[0] ||
+      cohortStudents[0] ||
       null
     );
-  }, [studentRecords, selectedStudentId]);
+  }, [filteredStudents, cohortStudents, selectedStudentId]);
 
   // Student specific data
   const studentHomeworks = useMemo(() => {
@@ -170,7 +248,7 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
     );
   }, [evaluations, currentStudent]);
 
-  // Calculate Metrics for the Selected Student
+  // Calculate Metrics for the Selected Student strictly from real activity
   const studentMetrics = useMemo(() => {
     if (!currentStudent) {
       return {
@@ -184,134 +262,280 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
       };
     }
 
-    const reviewed = studentHomeworks.filter((h) => h.status === 'reviewed');
+    const reviewed = studentHomeworks.filter(
+      (h) => h.status === 'reviewed' || typeof h.teacherScore === 'number'
+    );
     const pending = studentHomeworks.filter((h) => h.status === 'pending');
 
     const totalHwScore = reviewed.reduce((sum, h) => sum + (h.teacherScore || 0), 0);
     const maxPossibleHwScore = reviewed.reduce((sum, h) => sum + (h.maxScore || 10), 0);
     const hwAvgPercent =
-      maxPossibleHwScore > 0 ? Math.round((totalHwScore / maxPossibleHwScore) * 100) : 85;
+      maxPossibleHwScore > 0
+        ? Math.round((totalHwScore / maxPossibleHwScore) * 100)
+        : studentHomeworks.length > 0
+        ? 100
+        : 0;
 
     const totalQuizScore = studentExams.reduce((sum, e) => sum + e.score, 0);
     const maxPossibleQuizScore = studentExams.reduce((sum, e) => sum + e.maxScore, 0);
     const quizAvgPercent =
-      maxPossibleQuizScore > 0 ? Math.round((totalQuizScore / maxPossibleQuizScore) * 100) : 80;
+      maxPossibleQuizScore > 0 ? Math.round((totalQuizScore / maxPossibleQuizScore) * 100) : 0;
 
-    const submissionRate = Math.min(
-      100,
-      Math.round((studentHomeworks.length / Math.max(1, 4)) * 100)
+    const assignedTasksForStudent = assignmentTasks.filter((t) =>
+      isClassMatching(currentStudent.classRoom, t.targetClass)
     );
+    const targetTaskCount = Math.max(1, assignedTasksForStudent.length || 1);
+    const submissionRate =
+      studentHomeworks.length > 0
+        ? Math.min(100, Math.round((studentHomeworks.length / targetTaskCount) * 100))
+        : 0;
 
-    const reflectionScore = Math.min(100, studentReflections.length * 50);
-    const consistencyScore = Math.min(100, Math.round((currentStudent.totalStars / 300) * 100));
+    const reflectionAvg =
+      studentReflections.length > 0
+        ? studentReflections.reduce((s, r) => s + r.ratingStars, 0) / studentReflections.length
+        : 0;
+    const reflectionScore =
+      studentReflections.length > 0 ? Math.min(100, Math.round((reflectionAvg / 5) * 100)) : 0;
+
+    const consistencyScore =
+      currentStudent.totalStars > 0
+        ? Math.min(100, Math.round((currentStudent.totalStars / 300) * 100))
+        : 0;
 
     return {
-      submissionRate: Math.max(20, submissionRate),
+      submissionRate,
       hwAvgScore: hwAvgPercent,
       quizAvgScore: quizAvgPercent,
-      reflectionScore: Math.max(30, reflectionScore),
-      consistencyScore: Math.max(30, consistencyScore),
+      reflectionScore,
+      consistencyScore,
       reviewedCount: reviewed.length,
       pendingCount: pending.length,
     };
-  }, [currentStudent, studentHomeworks, studentExams, studentReflections]);
+  }, [currentStudent, studentHomeworks, studentExams, studentReflections, assignmentTasks]);
+
+  // Helper to compute real 3-Dimensions metrics for any classroom filter ('all' or specific room)
+  const computeMetricsForClassroom = useCallback(
+    (roomFilter: string) => {
+      const studentsInRoom = studentRecords.filter((s) =>
+        roomFilter === 'all' ? true : isClassMatching(s.classRoom, roomFilter)
+      );
+
+      const relevantEvals = evaluations.filter((ev) =>
+        roomFilter === 'all' ? true : isClassMatching(ev.studentClass, roomFilter)
+      );
+      const relevantHw = homeworkList.filter((h) =>
+        roomFilter === 'all' ? true : isClassMatching(h.studentClass, roomFilter)
+      );
+      const relevantExams = examScores.filter((e) =>
+        roomFilter === 'all' ? true : isClassMatching(e.studentClass, roomFilter)
+      );
+      const relevantTasks = assignmentTasks.filter((t) =>
+        roomFilter === 'all' ? true : isClassMatching(roomFilter, t.targetClass)
+      );
+
+      // Unique real active students in this classroom
+      const activeStudentKeySet = new Set<string>();
+      relevantEvals.forEach((e) => activeStudentKeySet.add(e.studentId || e.studentName.toLowerCase()));
+      relevantHw.forEach((h) => activeStudentKeySet.add(h.studentId || h.studentName.toLowerCase()));
+      relevantExams.forEach((e) => activeStudentKeySet.add(e.studentId || e.studentName.toLowerCase()));
+
+      const totalStudentsInCohort = Math.max(studentsInRoom.length, activeStudentKeySet.size);
+
+      // 1. Assessment AS Learning (ผู้เรียนประเมินตนเอง / เพื่อนร่วมชั้นเรียนประเมิน)
+      const asLearningEvals = relevantEvals.filter(
+        (e) => !e.assessmentType || e.assessmentType === 'Assessment as Learning'
+      );
+      const targetAsEvals = asLearningEvals.length > 0 ? asLearningEvals : relevantEvals;
+      const uniqueReflectingStudents = new Set(
+        targetAsEvals.map((e) => e.studentId || e.studentName.toLowerCase())
+      );
+      const reflectionParticipationRate =
+        totalStudentsInCohort > 0 && targetAsEvals.length > 0
+          ? Math.min(100, Math.round((uniqueReflectingStudents.size / totalStudentsInCohort) * 100))
+          : 0;
+      const avgSelfRatingStars =
+        targetAsEvals.length > 0
+          ? targetAsEvals.reduce((sum, e) => sum + e.ratingStars, 0) / targetAsEvals.length
+          : 0;
+      const selfAwarenessPercent =
+        targetAsEvals.length > 0 ? Math.min(100, Math.round((avgSelfRatingStars / 5) * 100)) : 0;
+      const asLearningScore =
+        targetAsEvals.length > 0
+          ? Math.min(100, Math.round(selfAwarenessPercent * 0.6 + reflectionParticipationRate * 0.4))
+          : 0;
+
+      // 2. Assessment FOR Learning (ครูทำหน้าที่ให้ Feedback ชี้แนะเพื่อการพัฒนา)
+      const forLearningEvals = relevantEvals.filter(
+        (e) => e.assessmentType === 'Assessment for Learning'
+      );
+      const reviewedHw = relevantHw.filter(
+        (h) => h.status === 'reviewed' || typeof h.teacherScore === 'number'
+      );
+      const totalHwScore = reviewedHw.reduce((sum, h) => sum + (h.teacherScore || 0), 0);
+      const maxPossibleHwScore = reviewedHw.reduce((sum, h) => sum + (h.maxScore || 10), 0);
+      const hwAvgPercent =
+        maxPossibleHwScore > 0
+          ? Math.round((totalHwScore / maxPossibleHwScore) * 100)
+          : relevantHw.length > 0
+          ? 100
+          : forLearningEvals.length > 0
+          ? Math.round(
+              (forLearningEvals.reduce((s, e) => s + e.ratingStars, 0) /
+                (forLearningEvals.length * 5)) *
+                100
+            )
+          : 0;
+      const expectedSubmissions = Math.max(
+        1,
+        totalStudentsInCohort * Math.max(1, relevantTasks.length)
+      );
+      const hwSubmissionProgress =
+        totalStudentsInCohort > 0 && (relevantHw.length > 0 || forLearningEvals.length > 0)
+          ? Math.min(
+              100,
+              Math.round(
+                ((relevantHw.length + forLearningEvals.length) / expectedSubmissions) * 100
+              )
+            )
+          : 0;
+      const forLearningScore =
+        relevantHw.length > 0 || forLearningEvals.length > 0
+          ? Math.min(100, Math.round(hwAvgPercent * 0.6 + hwSubmissionProgress * 0.4))
+          : 0;
+
+      // 3. Assessment OF Learning (ครูประเมินเพื่อตัดสินผลสัมฤทธิ์)
+      const ofLearningEvals = relevantEvals.filter(
+        (e) => e.assessmentType === 'Assessment of Learning'
+      );
+      const totalExamScore = relevantExams.reduce((sum, e) => sum + e.score, 0);
+      const maxPossibleExamScore = relevantExams.reduce((sum, e) => sum + e.maxScore, 0);
+      const examAvgPercent =
+        maxPossibleExamScore > 0
+          ? Math.round((totalExamScore / maxPossibleExamScore) * 100)
+          : ofLearningEvals.length > 0
+          ? Math.round(
+              (ofLearningEvals.reduce((s, e) => s + e.ratingStars, 0) /
+                (ofLearningEvals.length * 5)) *
+                100
+            )
+          : 0;
+      const passedExams = relevantExams.filter(
+        (e) => e.maxScore > 0 && e.score / e.maxScore >= 0.6
+      );
+      const passingRatePercent =
+        relevantExams.length > 0
+          ? Math.round((passedExams.length / relevantExams.length) * 100)
+          : ofLearningEvals.length > 0
+          ? 100
+          : 0;
+      const ofLearningScore =
+        relevantExams.length > 0 || ofLearningEvals.length > 0
+          ? Math.min(100, Math.round(examAvgPercent * 0.7 + passingRatePercent * 0.3))
+          : 0;
+
+      const activePillars = [asLearningScore, forLearningScore, ofLearningScore].filter(
+        (v) => v > 0
+      );
+      const overallTriadAvg =
+        activePillars.length > 0
+          ? Math.round((asLearningScore + forLearningScore + ofLearningScore) / 3)
+          : 0;
+
+      return {
+        asLearningScore,
+        forLearningScore,
+        ofLearningScore,
+        overallTriadAvg,
+        avgSelfRatingStars: Number(avgSelfRatingStars.toFixed(1)),
+        reflectionParticipationRate,
+        hwAvgPercent,
+        hwSubmissionProgress,
+        examAvgPercent,
+        passingRatePercent,
+        totalEvals: relevantEvals.length,
+        totalHw: relevantHw.length,
+        totalExams: relevantExams.length,
+        totalStudents: studentsInRoom.length,
+        activeStudentsCount: activeStudentKeySet.size,
+      };
+    },
+    [studentRecords, evaluations, homeworkList, examScores, assignmentTasks]
+  );
 
   // 🌟 THE 3 DIMENSIONS OF ASSESSMENT ANALYTICS (Cohort / Class Level)
-  // 1. Assessment AS Learning (ผู้เรียนประเมินตนเอง / เพื่อนร่วมชั้นเรียนประเมิน)
-  // 2. Assessment FOR Learning (ครูทำหน้าที่ให้ Feedback)
-  // 3. Assessment OF Learning (ครูประเมินเพื่อตัดสิน)
-  const classAssessmentMetrics = useMemo(() => {
-    const totalStudentsInCohort = Math.max(1, filteredStudents.length || studentRecords.length || 1);
+  const classAssessmentMetrics = useMemo(
+    () => computeMetricsForClassroom(classFilter),
+    [computeMetricsForClassroom, classFilter]
+  );
 
-    // 1. Assessment AS Learning (ผู้เรียนประเมินตนเอง / เพื่อนร่วมชั้นเรียนประเมิน)
-    const relevantEvals = evaluations.filter((ev) => {
-      if (classFilter === 'all') return true;
-      return ev.studentClass === classFilter || ev.studentClass?.includes(classFilter);
+  // Room-by-Room Comparison Data across all classrooms in the teacher's account
+  const classroomComparisonBarData = useMemo(() => {
+    return classrooms.map((room) => {
+      const m = computeMetricsForClassroom(room);
+      return {
+        name: room,
+        'As Learning': m.asLearningScore,
+        'For Learning': m.forLearningScore,
+        'Of Learning': m.ofLearningScore,
+        เฉลี่ยรวม: m.overallTriadAvg,
+        จำนวนนักเรียนจริง: m.totalStudents,
+        ส่งงานและสะท้อนคิด: m.totalHw + m.totalExams + m.totalEvals,
+      };
     });
-    const uniqueReflectingStudents = new Set(relevantEvals.map((e) => e.studentId || e.studentName.toLowerCase()));
-    const reflectionParticipationRate = Math.min(100, Math.round((uniqueReflectingStudents.size / totalStudentsInCohort) * 100));
-    const avgSelfRatingStars = relevantEvals.length > 0
-      ? relevantEvals.reduce((sum, e) => sum + e.ratingStars, 0) / relevantEvals.length
-      : 4.7;
-    const selfAwarenessPercent = Math.min(100, Math.round((avgSelfRatingStars / 5) * 100));
-    const asLearningScore = Math.min(100, Math.max(25, Math.round(selfAwarenessPercent * 0.55 + reflectionParticipationRate * 0.45) || 88));
+  }, [classrooms, computeMetricsForClassroom]);
 
-    // 2. Assessment FOR Learning (ครูทำหน้าที่ให้ Feedback ชี้แนะเพื่อการพัฒนา)
-    const relevantHw = homeworkList.filter((h) => {
-      if (classFilter === 'all') return true;
-      return h.studentClass === classFilter || h.studentClass?.includes(classFilter);
-    });
-    const reviewedHw = relevantHw.filter((h) => h.status === 'reviewed');
-    const totalHwScore = reviewedHw.reduce((sum, h) => sum + (h.teacherScore || 0), 0);
-    const maxPossibleHwScore = reviewedHw.reduce((sum, h) => sum + (h.maxScore || 10), 0);
-    const hwAvgPercent = maxPossibleHwScore > 0 ? Math.round((totalHwScore / maxPossibleHwScore) * 100) : 85;
-    const expectedSubmissions = totalStudentsInCohort * 2;
-    const hwSubmissionProgress = Math.min(100, Math.round((relevantHw.length / Math.max(1, expectedSubmissions)) * 100) || 82);
-    const forLearningScore = Math.min(100, Math.max(30, Math.round(hwAvgPercent * 0.6 + hwSubmissionProgress * 0.4) || 86));
-
-    // 3. Assessment OF Learning (ครูประเมินเพื่อตัดสินผลสัมฤทธิ์)
-    const relevantExams = examScores.filter((e) => {
-      if (classFilter === 'all') return true;
-      return e.studentClass === classFilter || e.studentClass?.includes(classFilter);
-    });
-    const totalExamScore = relevantExams.reduce((sum, e) => sum + e.score, 0);
-    const maxPossibleExamScore = relevantExams.reduce((sum, e) => sum + e.maxScore, 0);
-    const examAvgPercent = maxPossibleExamScore > 0 ? Math.round((totalExamScore / maxPossibleExamScore) * 100) : 83;
-    const passedExams = relevantExams.filter((e) => e.maxScore > 0 && (e.score / e.maxScore) >= 0.6);
-    const passingRatePercent = relevantExams.length > 0 ? Math.round((passedExams.length / relevantExams.length) * 100) : 90;
-    const ofLearningScore = Math.min(100, Math.max(25, Math.round(examAvgPercent * 0.7 + passingRatePercent * 0.3) || 84));
-
-    const overallTriadAvg = Math.round((asLearningScore + forLearningScore + ofLearningScore) / 3);
-
-    return {
-      asLearningScore,
-      forLearningScore,
-      ofLearningScore,
-      overallTriadAvg,
-      avgSelfRatingStars: Number(avgSelfRatingStars.toFixed(1)),
-      reflectionParticipationRate,
-      hwAvgPercent,
-      hwSubmissionProgress,
-      examAvgPercent,
-      passingRatePercent,
-      totalEvals: relevantEvals.length,
-      totalHw: relevantHw.length,
-      totalExams: relevantExams.length,
-    };
-  }, [evaluations, homeworkList, examScores, classFilter, filteredStudents, studentRecords]);
-
-  // Individual Student 3-Pillars Assessment
+  // Individual Student 3-Pillars Assessment (strictly from real student activity)
   const studentAssessmentMetrics = useMemo(() => {
     if (!currentStudent) return null;
 
     // 1. As Learning (ผู้เรียนประเมินตนเอง / เพื่อนร่วมชั้นเรียนประเมิน)
-    const selfRatingAvg = studentReflections.length > 0
-      ? studentReflections.reduce((s, e) => s + e.ratingStars, 0) / studentReflections.length
-      : 4.8;
-    const asLearningScore = Math.min(100, Math.round((selfRatingAvg / 5) * 60 + (studentReflections.length > 0 ? 40 : 25)));
+    const selfRatingAvg =
+      studentReflections.length > 0
+        ? studentReflections.reduce((s, e) => s + e.ratingStars, 0) / studentReflections.length
+        : 0;
+    const asLearningScore =
+      studentReflections.length > 0
+        ? Math.min(
+            100,
+            Math.round((selfRatingAvg / 5) * 70 + Math.min(30, studentReflections.length * 15))
+          )
+        : 0;
 
     // 2. For Learning (ครูทำหน้าที่ให้ Feedback พัฒนาชิ้นงานระหว่างทาง)
-    const forLearningScore = Math.min(100, Math.round((studentMetrics.hwAvgScore * 0.6) + (studentMetrics.submissionRate * 0.4)));
+    const forLearningScore =
+      studentHomeworks.length > 0
+        ? Math.min(
+            100,
+            Math.round(studentMetrics.hwAvgScore * 0.6 + studentMetrics.submissionRate * 0.4)
+          )
+        : 0;
 
     // 3. Of Learning (ครูประเมินเพื่อตัดสินผลสัมฤทธิ์)
-    const ofLearningScore = studentMetrics.quizAvgScore;
+    const ofLearningScore = studentExams.length > 0 ? studentMetrics.quizAvgScore : 0;
 
-    const overallTriadAvg = Math.round((asLearningScore + forLearningScore + ofLearningScore) / 3);
+    const overallTriadAvg = Math.round(
+      (asLearningScore + forLearningScore + ofLearningScore) / 3
+    );
 
-    let levelText = 'ระดับดีเยี่ยม (Mastery 🌟)';
-    let levelBadge = 'bg-emerald-100 text-emerald-950 border-emerald-400';
-    if (overallTriadAvg >= 80) {
-      levelText = 'ระดับดีเยี่ยม (Mastery 🌟)';
-      levelBadge = 'bg-emerald-100 text-emerald-950 border-emerald-400';
-    } else if (overallTriadAvg >= 70) {
-      levelText = 'ระดับดี (Proficient 👍)';
-      levelBadge = 'bg-sky-100 text-sky-950 border-sky-400';
-    } else if (overallTriadAvg >= 50) {
-      levelText = 'ระดับพอใช้ (Developing 💡)';
-      levelBadge = 'bg-amber-100 text-amber-950 border-amber-400';
-    } else {
-      levelText = 'ควรส่งเสริมเป็นพิเศษ (Needs Support 📌)';
-      levelBadge = 'bg-rose-100 text-rose-950 border-rose-400';
+    const hasAnyActivity =
+      studentReflections.length > 0 || studentHomeworks.length > 0 || studentExams.length > 0;
+
+    let levelText = 'รอข้อมูลการใช้งานจากนักเรียน';
+    let levelBadge = 'bg-zinc-100 text-zinc-700 border-zinc-400';
+    if (hasAnyActivity) {
+      if (overallTriadAvg >= 80) {
+        levelText = 'ระดับดีเยี่ยม (Mastery 🌟)';
+        levelBadge = 'bg-emerald-100 text-emerald-950 border-emerald-400';
+      } else if (overallTriadAvg >= 70) {
+        levelText = 'ระดับดี (Proficient 👍)';
+        levelBadge = 'bg-sky-100 text-sky-950 border-sky-400';
+      } else if (overallTriadAvg >= 50) {
+        levelText = 'ระดับพอใช้ (Developing 💡)';
+        levelBadge = 'bg-amber-100 text-amber-950 border-amber-400';
+      } else {
+        levelText = 'ควรส่งเสริมเป็นพิเศษ (Needs Support 📌)';
+        levelBadge = 'bg-rose-100 text-rose-950 border-rose-400';
+      }
     }
 
     return {
@@ -322,17 +546,38 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
       selfRatingAvg: Number(selfRatingAvg.toFixed(1)),
       levelText,
       levelBadge,
+      hasAnyActivity,
     };
-  }, [currentStudent, studentReflections, studentMetrics]);
+  }, [currentStudent, studentReflections, studentHomeworks, studentExams, studentMetrics]);
 
-  // Radar Chart Data for Individual Student Competencies
+  // Radar Chart Data for Individual Student Competencies (real scores, 0 if no data)
   const radarData = useMemo(() => {
     return [
-      { subject: 'As Learning (ผู้เรียนประเมินตนเอง/เพื่อนประเมิน)', score: studentAssessmentMetrics?.asLearningScore || 85, fullMark: 100 },
-      { subject: 'For Learning (ครูทำหน้าที่ให้ Feedback)', score: studentAssessmentMetrics?.forLearningScore || 85, fullMark: 100 },
-      { subject: 'Of Learning (ครูประเมินเพื่อตัดสิน)', score: studentAssessmentMetrics?.ofLearningScore || 80, fullMark: 100 },
-      { subject: 'การส่งงานตรงเวลา', score: studentMetrics.submissionRate, fullMark: 100 },
-      { subject: 'ดาวรางวัลสะสม', score: studentMetrics.consistencyScore, fullMark: 100 },
+      {
+        subject: 'As Learning (ประเมินตนเอง/เพื่อน)',
+        score: studentAssessmentMetrics?.asLearningScore ?? 0,
+        fullMark: 100,
+      },
+      {
+        subject: 'For Learning (ครูให้ Feedback)',
+        score: studentAssessmentMetrics?.forLearningScore ?? 0,
+        fullMark: 100,
+      },
+      {
+        subject: 'Of Learning (ผลสัมฤทธิ์สอบ)',
+        score: studentAssessmentMetrics?.ofLearningScore ?? 0,
+        fullMark: 100,
+      },
+      {
+        subject: 'การส่งงานตรงเวลา',
+        score: studentMetrics.submissionRate,
+        fullMark: 100,
+      },
+      {
+        subject: 'ดาวรางวัลสะสม',
+        score: studentMetrics.consistencyScore,
+        fullMark: 100,
+      },
     ];
   }, [studentMetrics, studentAssessmentMetrics]);
 
@@ -363,68 +608,99 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
     ];
   }, [classAssessmentMetrics]);
 
-  // Homework progress comparison for this student
+  // Homework & Quiz progress comparison for this student (real items only)
   const homeworkComparisonData = useMemo(() => {
-    if (!studentHomeworks.length) {
-      return [
-        { name: 'ชิ้นงานที่ 1', คะแนนที่ได้: 9, คะแนนเต็ม: 10 },
-        { name: 'ชิ้นงานที่ 2', คะแนนที่ได้: 8, คะแนนเต็ม: 10 },
-      ];
-    }
-    return studentHomeworks.map((h, i) => ({
-      name: h.title.length > 14 ? h.title.substring(0, 12) + '...' : h.title || `งานที่ ${i + 1}`,
-      คะแนนที่ได้: h.teacherScore ?? (h.status === 'reviewed' ? 8 : 0),
+    const hwItems = studentHomeworks.map((h, i) => ({
+      name:
+        h.title.length > 14 ? h.title.substring(0, 12) + '...' : h.title || `งานที่ ${i + 1}`,
+      คะแนนที่ได้: h.teacherScore ?? 0,
       คะแนนเต็ม: h.maxScore || 10,
     }));
-  }, [studentHomeworks]);
+    const examItems = studentExams.map((e, i) => ({
+      name:
+        e.lessonTitle.length > 14
+          ? e.lessonTitle.substring(0, 12) + '...'
+          : e.lessonTitle || `สอบที่ ${i + 1}`,
+      คะแนนที่ได้: e.score,
+      คะแนนเต็ม: e.maxScore || 10,
+    }));
+    return [...hwItems, ...examItems];
+  }, [studentHomeworks, studentExams]);
 
-  // Class Overview Stats
+  // Class Overview Stats (scoped to the selected classroom)
   const classStats = useMemo(() => {
-    const totalStudents = studentRecords.length;
-    const totalHwSubmitted = homeworkList.length;
-    const totalStarsAll = studentRecords.reduce((sum, s) => sum + s.totalStars, 0);
+    const totalStudents = cohortStudents.length;
+    const totalHwSubmitted = classAssessmentMetrics.totalHw;
+    const totalExamsTaken = classAssessmentMetrics.totalExams;
+    const totalReflections = classAssessmentMetrics.totalEvals;
+    const totalStarsAll = cohortStudents.reduce((sum, s) => sum + s.totalStars, 0);
     const avgStars = totalStudents > 0 ? Math.round(totalStarsAll / totalStudents) : 0;
     return {
       totalStudents,
+      activeStudentsCount: classAssessmentMetrics.activeStudentsCount,
       totalHwSubmitted,
+      totalExamsTaken,
+      totalReflections,
       totalStarsAll,
       avgStars,
     };
-  }, [studentRecords, homeworkList]);
+  }, [cohortStudents, classAssessmentMetrics]);
 
-  // Class Comparison Top Students Data for Bar Chart
+  // Class Comparison Top Students Data for Bar Chart (scoped to selected classroom)
   const topStudentsBarData = useMemo(() => {
-    return [...studentRecords]
+    return [...cohortStudents]
       .sort((a, b) => b.totalStars - a.totalStars)
-      .slice(0, 8)
-      .map((s) => ({
-        name: s.name.split(' ')[0] || s.name,
-        ดาวสะสม: s.totalStars,
-        การบ้าน: s.homeworkCount * 20,
-      }));
-  }, [studentRecords]);
+      .slice(0, 12)
+      .map((s) => {
+        const stdHw = homeworkList.filter(
+          (h) =>
+            h.studentId === s.id ||
+            (h.studentName && h.studentName.toLowerCase() === s.name.toLowerCase())
+        );
+        const stdExams = examScores.filter(
+          (e) =>
+            e.studentId === s.id ||
+            (e.studentName && e.studentName.toLowerCase() === s.name.toLowerCase())
+        );
+        const hwTotalScore = stdHw.reduce((sum, h) => sum + (h.teacherScore || 0), 0);
+        const examTotalScore = stdExams.reduce((sum, e) => sum + e.score, 0);
+        return {
+          name: `${s.name.split(' ')[0] || s.name} (${s.classRoom})`,
+          ดาวสะสม: s.totalStars,
+          ชิ้นงานที่ส่ง: Math.max(s.homeworkCount || 0, stdHw.length) * 10 + hwTotalScore,
+          คะแนนสอบรวม: examTotalScore * 10,
+        };
+      });
+  }, [cohortStudents, homeworkList, examScores]);
 
-  // Cohort & Class-wide Learning Progress & Reflection Interest Analytics
+  // Cohort & Class-wide Learning Progress & Reflection Interest Analytics (strictly real data)
   const reflectionAnalytics = useMemo(() => {
-    // Filter evaluations according to classFilter if selected
     const activeEvaluations = evaluations.filter((ev) => {
       if (classFilter === 'all') return true;
-      if (!ev.studentClass) return true;
-      if (ev.studentClass === classFilter) return true;
-      const sNum = ev.studentClass.replace(/[^0-9]/g, '');
-      const fNum = classFilter.replace(/[^0-9]/g, '');
-      return sNum && fNum && sNum === fNum;
+      return isClassMatching(ev.studentClass, classFilter);
+    });
+    const activeHomeworks = homeworkList.filter((h) => {
+      if (classFilter === 'all') return true;
+      return isClassMatching(h.studentClass, classFilter);
+    });
+    const activeExams = examScores.filter((e) => {
+      if (classFilter === 'all') return true;
+      return isClassMatching(e.studentClass, classFilter);
     });
 
     const totalEvals = activeEvaluations.length;
-    const totalStudentsInCohort = filteredStudents.length || studentRecords.length || 1;
+    const totalStudentsInCohort = cohortStudents.length;
 
     // Unique students who have shared reflections
     const uniqueParticipatingStudentIds = new Set(
       activeEvaluations.map((ev) => ev.studentId || ev.studentName.toLowerCase())
     );
-    const rawParticipation = Math.round((uniqueParticipatingStudentIds.size / Math.max(1, totalStudentsInCohort)) * 100);
-    const participationRate = Math.min(100, Math.max(40, rawParticipation || 75));
+    const participationRate =
+      totalStudentsInCohort > 0 && totalEvals > 0
+        ? Math.min(100, Math.round((uniqueParticipatingStudentIds.size / totalStudentsInCohort) * 100))
+        : totalEvals > 0
+        ? 100
+        : 0;
 
     // Star rating distribution
     const count5 = activeEvaluations.filter((e) => e.ratingStars === 5).length;
@@ -432,55 +708,80 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
     const count3 = activeEvaluations.filter((e) => e.ratingStars === 3).length;
     const countLow = activeEvaluations.filter((e) => e.ratingStars <= 2).length;
 
-    const baseCount = totalEvals || 1;
-    const percent5 = totalEvals > 0 ? Math.round((count5 / baseCount) * 100) : 60;
-    const percent4 = totalEvals > 0 ? Math.round((count4 / baseCount) * 100) : 30;
-    const percent3 = totalEvals > 0 ? Math.round((count3 / baseCount) * 100) : 10;
-    const percentLow = totalEvals > 0 ? Math.round((countLow / baseCount) * 100) : 0;
+    const percent5 = totalEvals > 0 ? Math.round((count5 / totalEvals) * 100) : 0;
+    const percent4 = totalEvals > 0 ? Math.round((count4 / totalEvals) * 100) : 0;
+    const percent3 = totalEvals > 0 ? Math.round((count3 / totalEvals) * 100) : 0;
+    const percentLow = totalEvals > 0 ? Math.round((countLow / totalEvals) * 100) : 0;
 
     // Average rating & interest score (0 - 100%)
     const avgStars =
       totalEvals > 0
         ? activeEvaluations.reduce((acc, e) => acc + e.ratingStars, 0) / totalEvals
-        : 4.7;
-    const overallInterestPercent = Math.min(100, Math.round((avgStars / 5) * 100));
+        : 0;
+    const overallInterestPercent =
+      totalEvals > 0 ? Math.min(100, Math.round((avgStars / 5) * 100)) : 0;
 
-    // Progress in 4 Core Dimensions (%)
-    // 1. ความเข้าใจในบทเรียน (Understanding):
-    const understandingPercent = Math.min(
-      100,
-      Math.max(45, Math.round(((count5 + count4 * 0.85) / Math.max(1, totalEvals || 1)) * 100) || 88)
-    );
+    // Progress in 4 Core Dimensions (%) from real student usage
+    // 1. ความเข้าใจในบทเรียน (Understanding): combines reflection understanding + real quiz/homework accuracy
+    const reflectionUnderstanding =
+      totalEvals > 0 ? Math.round(((count5 + count4 * 0.8 + count3 * 0.6) / totalEvals) * 100) : 0;
+    const understandingSources = [
+      ...(totalEvals > 0 ? [reflectionUnderstanding] : []),
+      ...(activeExams.length > 0 ? [classAssessmentMetrics.examAvgPercent] : []),
+      ...(activeHomeworks.length > 0 ? [classAssessmentMetrics.hwAvgPercent] : []),
+    ];
+    const understandingPercent =
+      understandingSources.length > 0
+        ? Math.min(
+            100,
+            Math.round(
+              understandingSources.reduce((a, b) => a + b, 0) / understandingSources.length
+            )
+          )
+        : 0;
+
     // 2. ความสนุกและกระตือรือร้นในกิจกรรม (Activity Excitement & Engagement):
-    const activityEngagementPercent = Math.min(
-      100,
-      Math.max(50, Math.round((avgStars / 5) * 100) || 92)
-    );
+    const activityEngagementPercent =
+      totalEvals > 0 ? Math.min(100, Math.round((avgStars / 5) * 100)) : 0;
+
     // 3. ความตั้งใจและส่งงานตรงเวลา (Submission Progress):
-    const totalHwTarget = totalStudentsInCohort * 2;
-    const totalReviewedOrSubmitted = homeworkList.length;
-    const submissionProgressPercent = Math.min(
-      100,
-      Math.max(35, Math.round((totalReviewedOrSubmitted / Math.max(1, totalHwTarget)) * 100) || 85)
+    const relevantTasks = assignmentTasks.filter((t) =>
+      classFilter === 'all' ? true : isClassMatching(classFilter, t.targetClass)
     );
+    const relevantLessons = quizLessons.filter((l) =>
+      classFilter === 'all' ? true : isClassMatching(classFilter, l.targetClass)
+    );
+    const expectedTotalItems = Math.max(
+      1,
+      Math.max(1, totalStudentsInCohort) *
+        Math.max(1, relevantTasks.length + relevantLessons.length)
+    );
+    const totalSubmittedItems = activeHomeworks.length + activeExams.length;
+    const submissionProgressPercent =
+      totalSubmittedItems > 0
+        ? Math.min(100, Math.round((totalSubmittedItems / expectedTotalItems) * 100))
+        : 0;
+
     // 4. การมีส่วนร่วมสะท้อนคิด (Reflection Participation):
-    const reflectionParticipationPercent = Math.max(30, participationRate);
+    const reflectionParticipationPercent = participationRate;
 
     // Interest level label & color
-    let interestLevelText = 'ความสนใจระดับดีเยี่ยม (Very High)';
-    let interestLevelColor = 'text-emerald-800 bg-emerald-100 border-emerald-300';
-    if (overallInterestPercent >= 85) {
-      interestLevelText = 'ความสนใจและกระตือรือร้นสูงมาก 🌟';
-      interestLevelColor = 'text-emerald-800 bg-emerald-100 border-emerald-300';
-    } else if (overallInterestPercent >= 70) {
-      interestLevelText = 'ความสนใจในระดับดี 👍';
-      interestLevelColor = 'text-sky-800 bg-sky-100 border-sky-300';
-    } else if (overallInterestPercent >= 50) {
-      interestLevelText = 'ความสนใจระดับปานกลาง 💡';
-      interestLevelColor = 'text-amber-800 bg-amber-100 border-amber-300';
-    } else {
-      interestLevelText = 'ต้องการกิจกรรมกระตุ้นเพิ่มเติม 🔍';
-      interestLevelColor = 'text-rose-800 bg-rose-100 border-rose-300';
+    let interestLevelText = 'รอข้อมูลสะท้อนคิดจากนักเรียน';
+    let interestLevelColor = 'text-zinc-700 bg-zinc-100 border-zinc-300';
+    if (totalEvals > 0) {
+      if (overallInterestPercent >= 85) {
+        interestLevelText = 'ความสนใจและกระตือรือร้นสูงมาก 🌟';
+        interestLevelColor = 'text-emerald-800 bg-emerald-100 border-emerald-300';
+      } else if (overallInterestPercent >= 70) {
+        interestLevelText = 'ความสนใจในระดับดี 👍';
+        interestLevelColor = 'text-sky-800 bg-sky-100 border-sky-300';
+      } else if (overallInterestPercent >= 50) {
+        interestLevelText = 'ความสนใจระดับปานกลาง 💡';
+        interestLevelColor = 'text-amber-800 bg-amber-100 border-amber-300';
+      } else {
+        interestLevelText = 'ต้องการกิจกรรมกระตุ้นเพิ่มเติม 🔍';
+        interestLevelColor = 'text-rose-800 bg-rose-100 border-rose-300';
+      }
     }
 
     return {
@@ -502,9 +803,18 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
       percent3,
       percentLow,
     };
-  }, [evaluations, classFilter, filteredStudents, studentRecords, homeworkList]);
+  }, [
+    evaluations,
+    homeworkList,
+    examScores,
+    assignmentTasks,
+    quizLessons,
+    classFilter,
+    cohortStudents,
+    classAssessmentMetrics,
+  ]);
 
-  // Individual Student Reflection Interest Analytics
+  // Individual Student Reflection Interest Analytics (strictly real data)
   const currentStudentReflectionAnalytics = useMemo(() => {
     if (!currentStudent) return null;
     const myEvals = evaluations.filter(
@@ -514,24 +824,26 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
     );
 
     const total = myEvals.length;
-    const avgStars = total > 0 ? myEvals.reduce((s, e) => s + e.ratingStars, 0) / total : 4.8;
-    const interestPercent = Math.min(100, Math.round((avgStars / 5) * 100));
+    const avgStars = total > 0 ? myEvals.reduce((s, e) => s + e.ratingStars, 0) / total : 0;
+    const interestPercent = total > 0 ? Math.min(100, Math.round((avgStars / 5) * 100)) : 0;
     const latestEval = myEvals[0] || null;
 
-    let status = 'สนใจการเรียนสูงมาก (กระตือรือร้น 🌟)';
-    let statusColor = 'text-emerald-800 bg-emerald-100 border-emerald-300';
-    if (interestPercent >= 85) {
-      status = 'สนใจการเรียนสูงมาก (กระตือรือร้น 🌟)';
-      statusColor = 'text-emerald-800 bg-emerald-100 border-emerald-300';
-    } else if (interestPercent >= 70) {
-      status = 'มีความสนใจระดับดี 👍';
-      statusColor = 'text-sky-800 bg-sky-100 border-sky-300';
-    } else if (interestPercent >= 50) {
-      status = 'สนใจระดับปานกลาง 💡';
-      statusColor = 'text-amber-800 bg-amber-100 border-amber-300';
-    } else {
-      status = 'ควรส่งเสริมกำลังใจเป็นพิเศษ 📌';
-      statusColor = 'text-rose-800 bg-rose-100 border-rose-300';
+    let status = 'ยังไม่ได้ส่งมุมสะท้อนคิด';
+    let statusColor = 'text-zinc-700 bg-zinc-100 border-zinc-300';
+    if (total > 0) {
+      if (interestPercent >= 85) {
+        status = 'สนใจการเรียนสูงมาก (กระตือรือร้น 🌟)';
+        statusColor = 'text-emerald-800 bg-emerald-100 border-emerald-300';
+      } else if (interestPercent >= 70) {
+        status = 'มีความสนใจระดับดี 👍';
+        statusColor = 'text-sky-800 bg-sky-100 border-sky-300';
+      } else if (interestPercent >= 50) {
+        status = 'สนใจระดับปานกลาง 💡';
+        statusColor = 'text-amber-800 bg-amber-100 border-amber-300';
+      } else {
+        status = 'ควรส่งเสริมกำลังใจเป็นพิเศษ 📌';
+        statusColor = 'text-rose-800 bg-rose-100 border-rose-300';
+      }
     }
 
     return {
@@ -587,12 +899,20 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
         {/* Quick Stats Pills */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="bg-white px-3.5 py-2 rounded-xl border-2 border-zinc-900 shadow-[2px_2px_0px_#000] text-center">
-            <div className="text-[10px] font-black text-zinc-500">นักเรียนทั้งหมด</div>
+            <div className="text-[10px] font-black text-zinc-500">
+              นักเรียนใน{classFilter === 'all' ? 'บัญชีครู' : `ห้อง ${classFilter}`}
+            </div>
             <div className="text-lg font-black text-zinc-900">{classStats.totalStudents} คน</div>
           </div>
           <div className="bg-amber-100 px-3.5 py-2 rounded-xl border-2 border-zinc-900 shadow-[2px_2px_0px_#000] text-center">
-            <div className="text-[10px] font-black text-amber-800">ชิ้นงานที่ส่งรวม</div>
+            <div className="text-[10px] font-black text-amber-800">ชิ้นงานที่ส่งจริง</div>
             <div className="text-lg font-black text-amber-950">{classStats.totalHwSubmitted} ชิ้น</div>
+          </div>
+          <div className="bg-purple-100 px-3.5 py-2 rounded-xl border-2 border-zinc-900 shadow-[2px_2px_0px_#000] text-center">
+            <div className="text-[10px] font-black text-purple-800">สอบ / สะท้อนคิด</div>
+            <div className="text-lg font-black text-purple-950">
+              {classStats.totalExamsTaken} / {classStats.totalReflections}
+            </div>
           </div>
           <div className="bg-emerald-100 px-3.5 py-2 rounded-xl border-2 border-zinc-900 shadow-[2px_2px_0px_#000] text-center">
             <div className="text-[10px] font-black text-emerald-800">ดาวสะสมเฉลี่ย</div>
@@ -609,6 +929,60 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
               <span>Google Sheets & ผู้สมัคร</span>
             </button>
           )}
+        </div>
+      </div>
+
+      {/* Classroom Selector Bar (เลือกดูกราฟประเมินแยกตามแต่ละห้องในบัญชีคุณครู) */}
+      <div className="bg-white sketch-border rounded-[20px_14px_18px_16px] p-4 shadow-[4px_4px_0px_#18181b] border-2 border-zinc-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-sky-200 border-2 border-zinc-900 flex items-center justify-center text-base font-black shadow-[1.5px_1.5px_0px_#000] shrink-0">
+            🏫
+          </div>
+          <div>
+            <div className="text-xs sm:text-sm font-black text-zinc-900">
+              เลือกห้องเรียนในบัญชีคุณครูเพื่อดูกราฟประเมินตามข้อมูลนักเรียนที่ใช้งานจริง
+            </div>
+            <div className="text-[11px] font-semibold text-zinc-600">
+              {classrooms.length === 0
+                ? 'ยังไม่มีข้อมูลห้องเรียนในระบบ — กรุณาเพิ่มนักเรียน หรือมอบหมายงาน/แบบทดสอบ/มุมสะท้อนคิดในห้องเรียนของคุณครู'
+                : `กำลังแสดงข้อมูลจริงของ: ${
+                    classFilter === 'all' ? `ทุกห้องในบัญชีครู (${classrooms.length} ห้อง)` : `ชั้นเรียน ${classFilter}`
+                  } • นักเรียนใช้งานจริง ${classStats.activeStudentsCount}/${classStats.totalStudents} คน`}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setClassFilter('all')}
+            className={`px-3 py-1.5 rounded-xl border-2 text-xs font-black cursor-pointer transition-all ${
+              classFilter === 'all'
+                ? 'bg-amber-300 text-zinc-950 border-zinc-900 shadow-[2px_2px_0px_#000]'
+                : 'bg-zinc-50 text-zinc-700 border-zinc-300 hover:bg-zinc-100'
+            }`}
+          >
+            ทุกห้องในบัญชี ({studentRecords.length} คน)
+          </button>
+          {classrooms.map((room) => {
+            const roomCount = studentRecords.filter((s) =>
+              isClassMatching(s.classRoom, room)
+            ).length;
+            return (
+              <button
+                key={room}
+                type="button"
+                onClick={() => setClassFilter(room)}
+                className={`px-3 py-1.5 rounded-xl border-2 text-xs font-black cursor-pointer transition-all ${
+                  classFilter === room
+                    ? 'bg-amber-300 text-zinc-950 border-zinc-900 shadow-[2px_2px_0px_#000]'
+                    : 'bg-zinc-50 text-zinc-700 border-zinc-300 hover:bg-zinc-100'
+                }`}
+              >
+                {room} ({roomCount} คน)
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -641,9 +1015,19 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
           {/* Triad Overall Score Pill */}
           <div className="flex items-center gap-2.5 bg-[#FFFDF5] px-4 py-2 rounded-xl border-2 border-zinc-900 shadow-[2px_2px_0px_#000] shrink-0">
             <div className="text-right">
-              <div className="text-[10px] font-bold text-zinc-500">คะแนนเฉลี่ย 3 มิติภาพรวม</div>
+              <div className="text-[10px] font-bold text-zinc-500">
+                คะแนนเฉลี่ย 3 มิติ ({classFilter === 'all' ? 'ทุกห้อง' : classFilter})
+              </div>
               <div className="text-xs font-black text-zinc-900">
-                {classAssessmentMetrics.overallTriadAvg >= 80 ? 'ผลการประเมินดีเยี่ยม 🌟' : 'ผลการประเมินระดับดี 👍'}
+                {classAssessmentMetrics.totalEvals === 0 &&
+                classAssessmentMetrics.totalHw === 0 &&
+                classAssessmentMetrics.totalExams === 0
+                  ? 'รอข้อมูลจากนักเรียนในห้องเรียน'
+                  : classAssessmentMetrics.overallTriadAvg >= 80
+                  ? 'ผลการประเมินดีเยี่ยม 🌟'
+                  : classAssessmentMetrics.overallTriadAvg >= 50
+                  ? 'ผลการประเมินระดับดี 👍'
+                  : 'กำลังสะสมข้อมูลการประเมิน 📊'}
               </div>
             </div>
             <div className="w-12 h-12 rounded-xl bg-purple-400 border-2 border-zinc-900 flex flex-col items-center justify-center font-black text-zinc-950 shadow-xs">
@@ -832,8 +1216,39 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
               </BarChart>
             </ResponsiveContainer>
           </div>
+          {/* Room-by-Room Comparison Chart when teacher has classrooms */}
+          {classroomComparisonBarData.length > 0 && (
+            <div className="pt-3 border-t border-zinc-200 space-y-2.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <span className="text-xs sm:text-sm font-black text-zinc-900">
+                  🏫 กราฟเปรียบเทียบผลการประเมิน 3 มิติแยกตามห้องเรียนในบัญชีครู:
+                </span>
+                <span className="text-[11px] font-bold text-zinc-500">
+                  อิงตามข้อมูลนักเรียนที่ใช้งานจริงของแต่ละห้อง ({classroomComparisonBarData.length} ห้อง)
+                </span>
+              </div>
+              <div className="h-56 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={classroomComparisonBarData}
+                    margin={{ top: 10, right: 20, left: -10, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 'bold' }} />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+                    <Tooltip formatter={(val: any, name: any) => [`${val}%`, name]} />
+                    <Legend wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
+                    <Bar dataKey="As Learning" fill="#a855f7" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="For Learning" fill="#0ea5e9" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="Of Learning" fill="#10b981" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
       <div className="bg-white sketch-border rounded-[24px_16px_22px_18px] p-5 md:p-6 shadow-[5px_5px_0px_#18181b] border-2 border-zinc-900 space-y-5">
         {/* Title & Overall Engagement Pill */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b-2 border-zinc-900 pb-3.5">
@@ -1036,18 +1451,79 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
       </div>
 
       {/* Main Grid: Student Selector + Deep Dive Evaluation */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6">
         
-        {/* Left Column: Student List & Filter (4 cols) */}
-        <div className="lg:col-span-4 space-y-4">
-          <div className="bg-white sketch-border rounded-[20px_16px_22px_18px] p-4 shadow-[4px_4px_0px_#18181b] space-y-3">
-            <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
-              <div className="flex items-center gap-2 text-sm font-black text-zinc-900">
+        {/* Left Column: Student List & Filter (5 cols on lg, 4 cols on xl) */}
+        <div className="lg:col-span-5 xl:col-span-4 space-y-4">
+          <div className="bg-white sketch-border rounded-[20px_16px_22px_18px] p-4 sm:p-5 shadow-[4px_4px_0px_#18181b] space-y-3.5 border-2 border-zinc-900">
+            <div className="flex items-center justify-between border-b border-zinc-200 pb-2.5">
+              <div className="flex items-center gap-2 text-sm sm:text-base font-black text-zinc-900">
                 <Users className="w-4 h-4 text-sky-600" />
                 <span>รายชื่อนักเรียน ({filteredStudents.length})</span>
               </div>
-              <span className="text-[11px] font-bold text-zinc-500">คลิกเพื่อดูผลประเมิน</span>
+              {onAddStudent ? (
+                <button
+                  type="button"
+                  onClick={() => setIsAddStudentOpen((v) => !v)}
+                  className="px-2.5 py-1 bg-amber-300 hover:bg-amber-400 text-zinc-950 text-xs font-black rounded-lg border border-zinc-900 shadow-[1.5px_1.5px_0px_#000] flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>เพิ่มนักเรียน</span>
+                </button>
+              ) : (
+                <span className="text-xs font-bold text-zinc-500">คลิกเพื่อดูผลประเมิน</span>
+              )}
             </div>
+
+            {isAddStudentOpen && (
+              <form
+                onSubmit={handleAddStudentSubmit}
+                className="p-3 bg-amber-50/80 rounded-xl border-2 border-zinc-900 space-y-2"
+              >
+                <div className="text-xs font-black text-zinc-900">เพิ่มรายชื่อนักเรียนใหม่</div>
+                <input
+                  type="text"
+                  required
+                  value={newStudentName}
+                  onChange={(e) => setNewStudentName(e.target.value)}
+                  placeholder="ชื่อ-นามสกุลนักเรียน *"
+                  className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-zinc-300 text-xs font-bold"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    required
+                    value={newStudentClass}
+                    onChange={(e) => setNewStudentClass(e.target.value)}
+                    placeholder="ชั้นเรียน เช่น ม.2/1 *"
+                    className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-zinc-300 text-xs font-bold"
+                  />
+                  <input
+                    type="text"
+                    required
+                    value={newStudentNo}
+                    onChange={(e) => setNewStudentNo(e.target.value)}
+                    placeholder="เลขที่ เช่น 1 *"
+                    className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-zinc-300 text-xs font-bold"
+                  />
+                </div>
+                <div className="flex items-center justify-end gap-1.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddStudentOpen(false)}
+                    className="px-2.5 py-1 bg-white text-zinc-700 text-xs font-bold rounded-lg border border-zinc-300 cursor-pointer"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-3 py-1 bg-emerald-400 hover:bg-emerald-500 text-zinc-950 text-xs font-black rounded-lg border border-zinc-900 cursor-pointer"
+                  >
+                    บันทึก
+                  </button>
+                </div>
+              </form>
+            )}
 
             {/* Filter by Room & Search */}
             <div className="space-y-2">
@@ -1058,7 +1534,7 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="ค้นหาชื่อ, รหัสนักเรียน..."
-                  className="w-full pl-9 pr-3 py-2 bg-zinc-50 rounded-xl border-2 border-zinc-300 focus:border-zinc-900 text-xs font-bold"
+                  className="w-full pl-9 pr-3 py-2 bg-zinc-50 rounded-xl border-2 border-zinc-300 focus:border-zinc-900 text-xs sm:text-sm font-bold"
                 />
               </div>
 
@@ -1100,7 +1576,7 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
             )}
 
             {/* Scrollable Student Cards List */}
-            <div className="max-h-[560px] overflow-y-auto space-y-2 pr-1">
+            <div className="max-h-[580px] overflow-y-auto space-y-2.5 pr-1">
               {filteredStudents.length === 0 ? (
                 <div className="text-center py-8 text-zinc-400 text-xs font-semibold">
                   ไม่พบลำดับนักเรียนที่ตรงกับคำค้นหา
@@ -1111,9 +1587,9 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
                   return (
                     <div
                       key={student.id}
-                      className={`w-full p-2.5 rounded-xl border-2 transition-all flex items-center justify-between gap-2 text-left ${
+                      className={`w-full p-3 rounded-2xl border-2 transition-all flex items-center justify-between gap-2.5 text-left ${
                         isSelected
-                          ? 'bg-amber-300 border-zinc-900 shadow-[3px_3px_0px_#18181b] scale-[1.01]'
+                          ? 'bg-amber-300 border-zinc-900 shadow-[3px_3px_0px_#18181b]'
                           : 'bg-[#FFFDF5] border-zinc-300 hover:border-zinc-900 hover:bg-zinc-50'
                       }`}
                     >
@@ -1125,23 +1601,24 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
                         }}
                         className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer text-left"
                       >
-                        <div className="w-10 h-10 rounded-xl border-2 border-zinc-900 bg-white flex items-center justify-center shrink-0 shadow-xs overflow-hidden">
+                        <div className="w-11 h-11 rounded-xl border-2 border-zinc-900 bg-white flex items-center justify-center shrink-0 shadow-xs overflow-hidden">
                           <AvatarDisplay avatarId={student.avatar} size="md" />
                         </div>
 
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-zinc-900 truncate">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-sm font-black text-zinc-900 truncate">
                               {student.name}
                             </span>
-                            <span className="text-[11px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 ml-1 shrink-0">
-                              ⭐ {student.totalStars}
+                            <span className="text-xs font-black text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded-lg border border-amber-300 ml-1 shrink-0 inline-flex items-center gap-1">
+                              <DoodleStar className="w-3.5 h-3.5 shrink-0" />
+                              <span>{student.totalStars}</span>
                             </span>
                           </div>
-                          <div className="text-[11px] font-medium text-zinc-600 flex items-center gap-1.5 mt-0.5">
+                          <div className="text-xs font-bold text-zinc-600 flex items-center gap-1.5 mt-0.5">
                             <span>เลขที่ {student.studentNo}</span>
                             <span>•</span>
-                            <span>{student.classRoom}</span>
+                            <span className="bg-stone-100 px-1 rounded border border-stone-200">{student.classRoom}</span>
                             <span>•</span>
                             <span className="text-emerald-700">{student.homeworkCount} งาน</span>
                           </div>
@@ -1169,8 +1646,8 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Individual Student Deep-Dive Graphs & Rubrics (8 cols) */}
-        <div className="lg:col-span-8 space-y-6">
+        {/* Right Column: Individual Student Deep-Dive Graphs & Rubrics (7 cols on lg, 8 cols on xl) */}
+        <div className="lg:col-span-7 xl:col-span-8 space-y-6">
           {currentStudent ? (
             <>
               {/* Selected Student Banner */}
@@ -1475,17 +1952,28 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
                   </div>
 
                   <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={homeworkComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
-                        <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} interval={0} angle={-15} textAnchor="end" />
-                        <YAxis tick={{ fontSize: 10 }} domain={[0, 10]} />
-                        <Tooltip />
-                        <Legend wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
-                        <Bar dataKey="คะแนนที่ได้" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="คะแนนเต็ม" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                    {homeworkComparisonData.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-center p-4 bg-zinc-50 rounded-xl border border-dashed border-zinc-300">
+                        <span className="text-xs font-bold text-zinc-600">
+                          ยังไม่มีข้อมูลคะแนนชิ้นงานหรือแบบทดสอบที่ส่งเข้ามา
+                        </span>
+                        <span className="text-[11px] font-medium text-zinc-400 mt-1">
+                          เมื่อนักเรียนส่งการบ้านหรือทำแบบทดสอบ กราฟจะแสดงคะแนนจริงทันที
+                        </span>
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={homeworkComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                          <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} interval={0} angle={-15} textAnchor="end" />
+                          <YAxis tick={{ fontSize: 10 }} domain={[0, 10]} />
+                          <Tooltip />
+                          <Legend wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
+                          <Bar dataKey="คะแนนที่ได้" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="คะแนนเต็ม" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
                   </div>
                   <div className="text-center text-[11px] font-bold text-zinc-500 mt-1">
                     เปรียบเทียบคะแนนแต่ละการบ้านของนักเรียน
@@ -1682,26 +2170,38 @@ export const TeacherDashboardView: React.FC<TeacherDashboardViewProps> = ({
           <div className="flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-indigo-600" />
             <h3 className="text-base font-black text-zinc-900">
-              🏆 กราฟเปรียบเทียบดาวสะสมและผลงานรวมของนักเรียนในชั้น
+              🏆 กราฟเปรียบเทียบดาวสะสมและผลงานรวมของนักเรียน ({classFilter === 'all' ? 'ทุกห้องในบัญชีครู' : `ชั้น ${classFilter}`})
             </h3>
           </div>
           <span className="text-xs font-bold text-zinc-500">
-            แสดงคะแนนสะสมสูงสุดในระบบ เพื่อให้เห็นภาพรวมทั้งห้อง
+            อิงตามข้อมูลนักเรียนที่ใช้งานจริง ({cohortStudents.length} คน)
           </span>
         </div>
 
         <div className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={topStudentsBarData} margin={{ top: 10, right: 20, left: -10, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
-              <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 'bold' }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
-              <Bar dataKey="ดาวสะสม" fill="#f59e0b" radius={[6, 6, 0, 0]} />
-              <Bar dataKey="การบ้าน" fill="#10b981" radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {topStudentsBarData.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center p-6 bg-zinc-50 rounded-xl border border-dashed border-zinc-300">
+              <span className="text-sm font-bold text-zinc-600">
+                ยังไม่มีข้อมูลนักเรียนใน{classFilter === 'all' ? 'บัญชีคุณครู' : `ห้อง ${classFilter}`}
+              </span>
+              <span className="text-xs font-medium text-zinc-400 mt-1">
+                เมื่อมีนักเรียนเข้าใช้งานส่งงาน ทำแบบทดสอบ หรือคุณครูเพิ่มรายชื่อนักเรียน กราฟจะแสดงข้อมูลจริงโดยอัตโนมัติ
+              </span>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={topStudentsBarData} margin={{ top: 10, right: 20, left: -10, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 'bold' }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
+                <Bar dataKey="ดาวสะสม" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="ชิ้นงานที่ส่ง" fill="#10b981" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="คะแนนสอบรวม" fill="#6366f1" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
 

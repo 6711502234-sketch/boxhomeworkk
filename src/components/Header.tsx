@@ -1,15 +1,15 @@
 import React from 'react';
 import { UserProfile, UserRole } from '../types';
 import { AvatarDisplay } from './DoodleAvatars';
+import { DoodleStar, DoodleGradCap, DoodleSchool } from './DoodleIcons';
 import { GoogleIcon } from './GoogleIcon';
 import { GoogleSheetsIcon } from './GoogleSheetsModal';
 import { getGoogleSheetsConfig } from '../services/googleSheetsService';
-import { Sparkles, UserCheck, GraduationCap, School, Star, Repeat, LogOut, Package, Box, Camera } from 'lucide-react';
+import { LogOut, Camera } from 'lucide-react';
 
 interface HeaderProps {
   user: UserProfile;
   onLogout: () => void;
-  onQuickToggleRole?: () => void;
   onOpenGoogleSheets?: () => void;
   onOpenProfileModal?: () => void;
 }
@@ -17,7 +17,6 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   user,
   onLogout,
-  onQuickToggleRole,
   onOpenGoogleSheets,
   onOpenProfileModal,
 }) => {
@@ -38,10 +37,10 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* User Info & Role Actions */}
         <div className="flex flex-wrap items-center justify-center md:justify-end gap-2.5 w-full md:w-auto">
-          {/* Star Balance Pill - Flat Icon Style */}
+          {/* Star Balance Pill - Doodle Style */}
           <div className="flex items-center gap-2.5 bg-[#FFFDF5] px-3.5 py-2 rounded-xl border border-amber-300 shadow-xs">
-            <div className="w-8 h-8 rounded-lg bg-amber-400 text-stone-900 flex items-center justify-center text-sm shadow-xs font-semibold">
-              ★
+            <div className="w-8 h-8 rounded-lg bg-amber-100 border border-amber-300 flex items-center justify-center shadow-xs">
+              <DoodleStar className="w-6 h-6" />
             </div>
             <div>
               <div className="text-xs font-bold text-amber-950 uppercase tracking-wider">
@@ -64,7 +63,7 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <AvatarDisplay avatar={user.avatar} className="w-10 h-10" />
               <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-amber-400 text-stone-900 rounded-full border border-white flex items-center justify-center text-[9px] shadow-xs group-hover/avatar:bg-amber-500">
-                📷
+                <Camera className="w-2.5 h-2.5" />
               </span>
             </button>
             <div className="min-w-0">
@@ -101,12 +100,12 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                 ) : user.role === 'teacher' ? (
                   <>
-                    <GraduationCap className="w-3.5 h-3.5 text-amber-600" />
+                    <DoodleGradCap className="w-4 h-4 shrink-0" />
                     <span>{user.teacherIdCode ? `รหัส: ${user.teacherIdCode}` : 'คุณครู'}</span>
                   </>
                 ) : (
                   <>
-                    <School className="w-3.5 h-3.5 text-amber-600" />
+                    <DoodleSchool className="w-4 h-4 shrink-0" />
                     <span>{user.studentIdCode ? `รหัส: ${user.studentIdCode}` : `เลขที่ ${user.studentNo}`}</span>
                   </>
                 )}
@@ -129,28 +128,14 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Quick Role Switcher if provided */}
-          {onQuickToggleRole && (
-            <button
-              onClick={onQuickToggleRole}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 text-base font-bold rounded-xl border border-amber-400 bg-amber-400 hover:bg-amber-500 text-stone-900 cursor-pointer shadow-xs transition-colors"
-              title="สลับบทบาทระหว่างนักเรียนและครู"
-            >
-              <Repeat className="w-4 h-4" />
-              <span className="hidden sm:inline font-bold">
-                {user.role === 'teacher' ? 'สลับเป็นนักเรียน' : 'สลับเป็นคุณครู'}
-              </span>
-            </button>
-          )}
-
-          {/* Logout / Switch Account Button */}
+          {/* Logout Button */}
           <button
             onClick={onLogout}
             className="flex items-center gap-1.5 px-4 py-2.5 bg-white hover:bg-amber-50 text-stone-800 text-base font-bold rounded-xl border border-amber-300 cursor-pointer transition-colors shadow-xs"
-            title="ออกจากระบบ หรือเปลี่ยนบัญชีผู้ใช้งาน"
+            title="ออกจากระบบ"
           >
             <LogOut className="w-4 h-4 text-stone-600" />
-            <span className="font-bold">สลับบัญชี/ออก</span>
+            <span className="font-bold">ออก</span>
           </button>
         </div>
       </div>

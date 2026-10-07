@@ -1,7 +1,49 @@
 import React, { useState, useEffect } from 'react';
-import { TeacherReflectionTopic, UserProfile } from '../types';
+import { TeacherReflectionTopic, UserProfile, AssessmentType } from '../types';
 import { AvatarDisplay } from './DoodleAvatars';
-import { X, MessageSquare, Pin, Send, Sparkles } from 'lucide-react';
+import { DoodleReflectionChat } from './DoodleIcons';
+import { X, Pin, Send, Check } from 'lucide-react';
+
+export const ASSESSMENT_OPTIONS: {
+  type: AssessmentType;
+  thaiSubtitle: string;
+  description: string;
+  defaultTitle: string;
+  defaultPrompt: string;
+  badgeClass: string;
+  cardActiveClass: string;
+}[] = [
+  {
+    type: 'Assessment as Learning',
+    thaiSubtitle: 'การประเมินเพื่อพัฒนาการเรียนรู้ด้วยตนเอง',
+    description: 'ให้นักเรียนทบทวน สะท้อนคิด และประเมินกระบวนการเรียนรู้ของตนเอง',
+    defaultTitle: 'Assessment as Learning: สะท้อนคิดและประเมินการเรียนรู้ด้วยตนเอง',
+    defaultPrompt:
+      'วันนี้เราได้เรียนรู้อะไรใหม่บ้าง? นักเรียนคิดว่าตนเองเข้าใจเนื้อหามากน้อยแค่ไหน และมีวิธีพัฒนาการเรียนรู้ของตนเองอย่างไรในหัวข้อนี้?',
+    badgeClass: 'bg-amber-200 text-amber-950 border-zinc-900',
+    cardActiveClass: 'bg-amber-100 border-zinc-900 shadow-[3px_3px_0px_#18181b]',
+  },
+  {
+    type: 'Assessment for Learning',
+    thaiSubtitle: 'การประเมินเพื่อพัฒนาการเรียนรู้ระหว่างเรียน',
+    description: 'สำรวจความเข้าใจและจุดที่ยังสงสัย เพื่อนำมาปรับการสอนและช่วยเหลือผู้เรียน',
+    defaultTitle: 'Assessment for Learning: สำรวจความเข้าใจและข้อสงสัยระหว่างเรียน',
+    defaultPrompt:
+      'จากกิจกรรมและเนื้อหาในคาบเรียนนี้ มีจุดไหนที่นักเรียนยังสงสัย อยากให้ครูอธิบายเพิ่มเติม หรืออยากให้ปรับรูปแบบกิจกรรมอย่างไรบ้าง?',
+    badgeClass: 'bg-sky-200 text-sky-950 border-zinc-900',
+    cardActiveClass: 'bg-sky-100 border-zinc-900 shadow-[3px_3px_0px_#18181b]',
+  },
+  {
+    type: 'Assessment of Learning',
+    thaiSubtitle: 'การประเมินเพื่อสรุปผลการเรียนรู้',
+    description: 'สรุปองค์ความรู้รวบยอดและการนำความรู้ไปประยุกต์ใช้หลังจบหน่วยการเรียนรู้',
+    defaultTitle: 'Assessment of Learning: สรุปองค์ความรู้และการนำไปประยุกต์ใช้',
+    defaultPrompt:
+      'สรุปใจความสำคัญที่ได้จากบทเรียนนี้คืออะไร และนักเรียนสามารถนำความรู้นี้ไปประยุกต์ใช้ในชีวิตประจำวันหรือชิ้นงานได้อย่างไรบ้าง?',
+    badgeClass: 'bg-emerald-200 text-emerald-950 border-zinc-900',
+    cardActiveClass: 'bg-emerald-100 border-zinc-900 shadow-[3px_3px_0px_#18181b]',
+  },
+];
 
 interface TeacherTopicModalProps {
   isOpen: boolean;
@@ -9,6 +51,7 @@ interface TeacherTopicModalProps {
   currentUser: UserProfile;
   onSaveTopic: (topic: TeacherReflectionTopic) => void;
   initialTopic?: TeacherReflectionTopic | null;
+  initialAssessmentType?: AssessmentType;
 }
 
 export const TeacherTopicModal: React.FC<TeacherTopicModalProps> = ({
@@ -17,7 +60,9 @@ export const TeacherTopicModal: React.FC<TeacherTopicModalProps> = ({
   currentUser,
   onSaveTopic,
   initialTopic,
+  initialAssessmentType = 'Assessment as Learning',
 }) => {
+  const [assessmentType, setAssessmentType] = useState<AssessmentType>('Assessment as Learning');
   const [title, setTitle] = useState('');
   const [promptQuestion, setPromptQuestion] = useState('');
   const [targetClass, setTargetClass] = useState('ทุกห้อง');
@@ -25,17 +70,45 @@ export const TeacherTopicModal: React.FC<TeacherTopicModalProps> = ({
 
   useEffect(() => {
     if (initialTopic) {
+      setAssessmentType(initialTopic.assessmentType || 'Assessment as Learning');
       setTitle(initialTopic.title);
       setPromptQuestion(initialTopic.promptQuestion);
       setTargetClass(initialTopic.targetClass || 'ทุกห้อง');
       setPinned(initialTopic.pinned ?? false);
     } else {
-      setTitle('');
-      setPromptQuestion('');
-      setTargetClass('ทุกห้อง');
+      const selectedOpt =
+        ASSESSMENT_OPTIONS.find((o) => o.type === initialAssessmentType) ||
+        ASSESSMENT_OPTIONS[0];
+      setAssessmentType(selectedOpt.type);
+      setTitle(selectedOpt.type);
+      setPromptQuestion(selectedOpt.defaultPrompt);
+      setTargetClass(
+        currentUser.teachingClasses && currentUser.teachingClasses.length > 0
+          ? currentUser.teachingClasses[0]
+          : 'ทุกห้อง'
+      );
       setPinned(true);
     }
-  }, [initialTopic, isOpen]);
+  }, [initialTopic, initialAssessmentType, isOpen, currentUser.teachingClasses]);
+
+  const handleSelectAssessmentType = (option: (typeof ASSESSMENT_OPTIONS)[number]) => {
+    setAssessmentType(option.type);
+    // Update title to the selected topic or replace previous default title
+    const isDefaultOrEmpty =
+      !title.trim() ||
+      ASSESSMENT_OPTIONS.some(
+        (o) => title.trim() === o.type || title.trim() === o.defaultTitle
+      );
+    if (isDefaultOrEmpty) {
+      setTitle(option.type);
+    }
+    const isDefaultPromptOrEmpty =
+      !promptQuestion.trim() ||
+      ASSESSMENT_OPTIONS.some((o) => promptQuestion.trim() === o.defaultPrompt);
+    if (isDefaultPromptOrEmpty) {
+      setPromptQuestion(option.defaultPrompt);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,10 +116,12 @@ export const TeacherTopicModal: React.FC<TeacherTopicModalProps> = ({
 
     const topic: TeacherReflectionTopic = {
       id: initialTopic ? initialTopic.id : 'topic-' + Date.now(),
+      assessmentType,
       title: title.trim(),
       promptQuestion: promptQuestion.trim(),
-      targetClass,
+      targetClass: targetClass.trim() || 'ทุกห้อง',
       authorTeacher: currentUser.name || 'คุณครู',
+      teacherId: currentUser.id,
       teacherAvatar: currentUser.avatar || 'teacher-female-glasses',
       createdAt: initialTopic
         ? initialTopic.createdAt
@@ -65,7 +140,7 @@ export const TeacherTopicModal: React.FC<TeacherTopicModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white sketch-border-lg rounded-[26px_18px_24px_20px] p-6 md:p-8 max-w-xl w-full relative shadow-[8px_8px_0px_#18181b] max-h-[92vh] overflow-y-auto">
+      <div className="bg-white sketch-border-lg rounded-[26px_18px_24px_20px] p-6 md:p-8 max-w-2xl w-full relative shadow-[8px_8px_0px_#18181b] max-h-[92vh] overflow-y-auto">
         {/* Washi Tape */}
         <div className="washi-tape -top-3.5 left-1/2 -translate-x-1/2 bg-purple-200 rotate-[-1deg]" />
 
@@ -81,83 +156,83 @@ export const TeacherTopicModal: React.FC<TeacherTopicModalProps> = ({
 
         {/* Header */}
         <div className="flex items-center gap-3 pb-4 border-b-2 border-zinc-200">
-          <div className="w-12 h-12 rounded-xl bg-purple-200 border-2 border-zinc-900 flex items-center justify-center text-2xl shadow-[2px_2px_0px_#000]">
-            ✍️
+          <div className="w-12 h-12 rounded-xl bg-purple-200 border-2 border-zinc-900 flex items-center justify-center shadow-[2px_2px_0px_#000]">
+            <DoodleReflectionChat className="w-8 h-8" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-xl font-black text-zinc-900">
-                {initialTopic ? 'แก้ไขโพสต์หัวข้อสะท้อนคิด' : 'โพสต์หัวข้อสะท้อนคิดชวนคุย'}
+                {initialTopic ? 'แก้ไขโพสต์หัวข้อสะท้อนคิด' : 'โพสต์หัวข้อในมุมสะท้อน'}
               </h3>
               <span className="bg-purple-200 text-purple-950 font-black text-[10px] px-2.5 py-0.5 rounded-full border border-zinc-900">
                 คุณครู
               </span>
             </div>
             <p className="text-xs font-semibold text-zinc-600 mt-0.5">
-              เขียนคำถามหรือประเด็นชวนคุยประจำคาบ เพื่อให้นักเรียนเข้ามาแสดงความคิดเห็นและให้ข้อเสนอแนะ
+              เลือกหัวข้อการประเมิน (Assessment) และตั้งประเด็นคำถามเพื่อให้นักเรียนร่วมสะท้อนคิด
             </p>
           </div>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          {/* Quick presets */}
+          {/* เลือกหัวข้อในการโพสต์: Assessment as / for / of Learning */}
           <div>
-            <label className="block text-[11px] font-black text-zinc-600 mb-1">
-              💡 ข้อความตัวอย่างด่วน (คลิกเพื่อเลือกใช้):
+            <label className="block text-xs md:text-sm font-black text-zinc-900 mb-2">
+              เลือกหัวข้อในการโพสต์ (ประเภทการประเมิน) <span className="text-rose-500">*</span>
             </label>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setTitle('ชวนคุยหลังคาบเรียน: ความรู้สึกและสิ่งที่ได้เรียนรู้วันนี้');
-                  setPromptQuestion(
-                    'นักเรียนคิดเห็นอย่างไรกับกิจกรรมในคาบเรียนวันนี้? ชอบช่วงไหนมากที่สุด และมีเรื่องไหนที่อยากให้ครูอธิบายซ้ำไหมจ๊ะ?'
-                  );
-                }}
-                className="px-2.5 py-1 bg-zinc-100 hover:bg-purple-100 text-zinc-800 text-[11px] font-bold rounded-lg border border-zinc-300 cursor-pointer transition-colors"
-              >
-                📝 สะท้อนคิดหลังคาบ
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTitle('สำรวจความเข้าใจและข้อสงสัยก่อนสอบเก็บคะแนน');
-                  setPromptQuestion(
-                    'ก่อนจะถึงการสอบเก็บคะแนนในสัปดาห์หน้า มีเนื้อหาหรือหัวข้อไหนที่รู้สึกว่ายังยาก หรืออยากให้ติวทบทวนเพิ่มไหม?'
-                  );
-                }}
-                className="px-2.5 py-1 bg-zinc-100 hover:bg-purple-100 text-zinc-800 text-[11px] font-bold rounded-lg border border-zinc-300 cursor-pointer transition-colors"
-              >
-                🎯 ทบทวนก่อนสอบ
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTitle('แชร์ไอเดีย: อยากให้จัดกิจกรรมกลุ่มหรือเกมแบบไหนในวิชานี้?');
-                  setPromptQuestion(
-                    'อยากฟังความคิดสร้างสรรค์จากทุกคน! อยากให้คาบถัดไปมีเกม กิจกรรมทดลอง หรือใช้สื่อแบบไหนในการเรียนรู้บ้าง ลองแชร์มาได้เลยนะ!'
-                  );
-                }}
-                className="px-2.5 py-1 bg-zinc-100 hover:bg-purple-100 text-zinc-800 text-[11px] font-bold rounded-lg border border-zinc-300 cursor-pointer transition-colors"
-              >
-                💡 ไอเดียกิจกรรม
-              </button>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {ASSESSMENT_OPTIONS.map((opt) => {
+                const isSelected = assessmentType === opt.type;
+                return (
+                  <button
+                    key={opt.type}
+                    type="button"
+                    onClick={() => handleSelectAssessmentType(opt)}
+                    className={`p-3 rounded-2xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between ${
+                      isSelected
+                        ? opt.cardActiveClass
+                        : 'bg-zinc-50 border-zinc-300 hover:border-zinc-700 hover:bg-white'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-1">
+                        <span className="text-xs sm:text-sm font-black text-zinc-950 leading-tight">
+                          {opt.type}
+                        </span>
+                        {isSelected && (
+                          <span className="w-5 h-5 rounded-full bg-zinc-900 text-white flex items-center justify-center shrink-0">
+                            <Check className="w-3 h-3 stroke-[3]" />
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] font-bold text-zinc-700 mt-1">
+                        {opt.thaiSubtitle}
+                      </div>
+                    </div>
+                    <div className="text-[10px] font-medium text-zinc-500 mt-1.5 leading-snug">
+                      {opt.description}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           {/* Title */}
           <div>
             <label className="block text-xs font-black text-zinc-800 mb-1 flex items-center justify-between">
-              <span>หัวข้อโพสต์ / ประเด็นหลัก <span className="text-rose-500">*</span></span>
-              <span className="text-[11px] font-semibold text-zinc-500">สั้น กระชับ ชัดเจน</span>
+              <span>หัวข้อโพสต์ <span className="text-rose-500">*</span></span>
+              <span className="text-[11px] font-semibold text-zinc-500">
+                ปรับแต่งข้อความหัวข้อเพิ่มเติมได้
+              </span>
             </label>
             <input
               type="text"
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="เช่น ชวนคุยหลังการทดลองฟิสิกส์: ชอบช่วงไหนที่สุด?"
+              placeholder="เช่น Assessment as Learning"
               className="w-full bg-[#FFFDF5] p-3 rounded-xl sketch-input text-xs md:text-sm font-bold text-zinc-900"
             />
           </div>
@@ -169,11 +244,11 @@ export const TeacherTopicModal: React.FC<TeacherTopicModalProps> = ({
               <span className="text-[11px] font-semibold text-purple-700">จะแสดงให้นักเรียนเห็นและตอบ</span>
             </label>
             <textarea
-              rows={4}
+              rows={3}
               required
               value={promptQuestion}
               onChange={(e) => setPromptQuestion(e.target.value)}
-              placeholder="เช่น ในคาบเรียนนี้ นักเรียนชอบกิจกรรมช่วงไหนมากที่สุด มีจุดไหนที่ยังสงสัยหรืออยากให้ครูอธิบายเพิ่มไหมจ๊ะ? มาร่วมแชร์ความคิดเห็นกันได้เลยนะ!"
+              placeholder="พิมพ์คำถามหรือประเด็นที่ต้องการให้นักเรียนสะท้อนคิด..."
               className="w-full bg-[#FFFDF5] p-3 rounded-xl sketch-input text-xs md:text-sm font-semibold text-zinc-900 resize-y"
             />
           </div>
@@ -183,10 +258,10 @@ export const TeacherTopicModal: React.FC<TeacherTopicModalProps> = ({
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs font-black text-zinc-800">
-                  ห้องเรียนเป้าหมาย (ระบุเลขได้):
+                  ห้องเรียนเป้าหมาย:
                 </label>
                 <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded">
-                  ระบุเลข 1, 2, 3...
+                  เช่น ม.2/1, ทุกห้อง
                 </span>
               </div>
               <input
@@ -194,27 +269,32 @@ export const TeacherTopicModal: React.FC<TeacherTopicModalProps> = ({
                 list="topic-targetclass-list"
                 value={targetClass}
                 onChange={(e) => setTargetClass(e.target.value)}
-                placeholder="เช่น ทุกห้อง, ห้อง 1, 1, 2, 3..."
+                placeholder="เช่น ทุกห้อง, ม.2/1, ห้อง 1..."
                 className="w-full bg-white p-2.5 rounded-lg border-2 border-zinc-900 text-xs font-bold text-zinc-800 shadow-[1.5px_1.5px_0px_#000]"
               />
               <datalist id="topic-targetclass-list">
                 <option value="ทุกห้อง" />
+                {currentUser.teachingClasses?.map((cls) => (
+                  <option key={cls} value={cls} />
+                ))}
+                <option value="ม.2/1" />
+                <option value="ม.2/2" />
                 <option value="ห้อง 1" />
                 <option value="ห้อง 2" />
-                <option value="ห้อง 3" />
-                <option value="ห้อง 4" />
-                <option value="ห้อง 5" />
-                <option value="ห้อง 6" />
               </datalist>
 
-              {/* Quick Number Pills */}
+              {/* Quick Classroom Pills */}
               <div className="flex items-center gap-1 mt-1.5 overflow-x-auto pb-0.5">
-                {['ทุกห้อง', '1', '2', '3', '4', '5'].map((n) => {
-                  const val = n === 'ทุกห้อง' ? 'ทุกห้อง' : `ห้อง ${n}`;
-                  const isSel = targetClass === val || targetClass === n;
+                {[
+                  'ทุกห้อง',
+                  ...(currentUser.teachingClasses && currentUser.teachingClasses.length > 0
+                    ? currentUser.teachingClasses
+                    : ['ม.2/1', 'ม.2/2']),
+                ].map((val) => {
+                  const isSel = targetClass === val;
                   return (
                     <button
-                      key={n}
+                      key={val}
                       type="button"
                       onClick={() => setTargetClass(val)}
                       className={`px-2 py-0.5 rounded text-[10px] font-black border transition-all cursor-pointer shrink-0 ${
@@ -223,7 +303,7 @@ export const TeacherTopicModal: React.FC<TeacherTopicModalProps> = ({
                           : 'bg-white text-zinc-700 border-zinc-300 hover:bg-purple-50'
                       }`}
                     >
-                      {n === 'ทุกห้อง' ? 'ทุกห้อง' : `เลข ${n}`}
+                      {val}
                     </button>
                   );
                 })}
@@ -250,18 +330,16 @@ export const TeacherTopicModal: React.FC<TeacherTopicModalProps> = ({
           {title && promptQuestion && (
             <div className="p-3.5 bg-purple-50/70 rounded-xl border-2 border-dashed border-purple-300 space-y-2">
               <div className="text-[11px] font-black text-purple-900 flex items-center gap-1">
-                <span>👁️ ตัวอย่างการแสดงผลให้นักเรียนเห็น:</span>
+                <span>ตัวอย่างการแสดงผลให้นักเรียนเห็น:</span>
               </div>
-              <div className="bg-white p-3 rounded-lg border border-purple-200 shadow-sm space-y-1">
-                <div className="flex items-center gap-2">
+              <div className="bg-white p-3 rounded-lg border border-purple-200 shadow-sm space-y-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
                   <AvatarDisplay avatar={currentUser.avatar} className="w-6 h-6" />
                   <span className="text-xs font-black text-zinc-900">{currentUser.name}</span>
-                  {pinned && (
-                    <span className="text-[10px] font-bold bg-rose-100 text-rose-800 px-1.5 py-0.2 rounded border border-rose-300">
-                      📌 ปักหมุด
-                    </span>
-                  )}
-                  <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-1.5 py-0.2 rounded border border-purple-300">
+                  <span className="text-[10px] font-black bg-amber-200 text-stone-900 px-2 py-0.5 rounded-full border border-zinc-900">
+                    {assessmentType}
+                  </span>
+                  <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded border border-purple-300">
                     {targetClass}
                   </span>
                 </div>

@@ -1,38 +1,109 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function
-    function isAuthenticated() {
-      return request.auth != null;
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
     }
 
-    match /users/{userId} {
-      allow read: if true;
-      allow write: if true;
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128;
     }
 
-    match /assignmentTasks/{taskId} {
-      allow read: if true;
-      allow write: if true;
+    function incoming() {
+      return request.resource.data;
     }
 
-    match /homeworks/{homeworkId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    match /evaluations/{evaluationId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    match /reflectionTopics/{topicId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
+    // Connection health check
     match /test/{docId} {
-      allow read, write: if true;
+      allow get: if isValidId(docId);
+    }
+
+    // User Profiles
+    match /users/{userId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(userId)
+        && incoming().keys().hasAll(['name', 'role'])
+        && incoming().name is string && incoming().name.size() >= 1 && incoming().name.size() <= 200
+        && incoming().role in ['student', 'teacher'];
+      allow delete: if isValidId(userId);
+    }
+
+    // Classroom Assignment Tasks
+    match /assignmentTasks/{taskId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(taskId)
+        && incoming().keys().hasAll(['id', 'title', 'subject'])
+        && incoming().id is string && incoming().id.size() <= 128
+        && incoming().title is string && incoming().title.size() >= 1 && incoming().title.size() <= 500
+        && incoming().subject is string && incoming().subject.size() <= 200;
+      allow delete: if isValidId(taskId);
+    }
+
+    // Student Homework Submissions
+    match /homeworks/{homeworkId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(homeworkId)
+        && incoming().keys().hasAll(['id', 'title', 'studentId', 'status'])
+        && incoming().id is string && incoming().id.size() <= 128
+        && incoming().title is string && incoming().title.size() >= 1 && incoming().title.size() <= 500
+        && incoming().studentId is string && incoming().studentId.size() <= 128
+        && incoming().status in ['pending', 'reviewed', 'needs_fix', 'graded'];
+      allow delete: if isValidId(homeworkId);
+    }
+
+    // Student Reflection / Teacher Evaluations
+    match /evaluations/{evaluationId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(evaluationId)
+        && incoming().keys().hasAll(['id', 'studentId', 'ratingStars'])
+        && incoming().id is string && incoming().id.size() <= 128
+        && incoming().studentId is string && incoming().studentId.size() <= 128
+        && incoming().ratingStars is number && incoming().ratingStars >= 1 && incoming().ratingStars <= 5;
+      allow delete: if isValidId(evaluationId);
+    }
+
+    // Teacher Reflection Topics
+    match /reflectionTopics/{topicId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(topicId)
+        && incoming().keys().hasAll(['id', 'title'])
+        && incoming().id is string && incoming().id.size() <= 128
+        && incoming().title is string && incoming().title.size() >= 1 && incoming().title.size() <= 500;
+      allow delete: if isValidId(topicId);
+    }
+
+    // Student Roster & Progress Records
+    match /studentRecords/{recordId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(recordId)
+        && incoming().keys().hasAll(['id', 'name', 'classRoom'])
+        && incoming().id is string && incoming().id.size() <= 128
+        && incoming().name is string && incoming().name.size() >= 1 && incoming().name.size() <= 200
+        && incoming().classRoom is string && incoming().classRoom.size() <= 200;
+      allow delete: if isValidId(recordId);
+    }
+
+    // Quiz / Exam Scores
+    match /examScores/{scoreId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(scoreId)
+        && incoming().keys().hasAll(['id', 'studentId', 'lessonId', 'score'])
+        && incoming().id is string && incoming().id.size() <= 128
+        && incoming().studentId is string && incoming().studentId.size() <= 128
+        && incoming().lessonId is string && incoming().lessonId.size() <= 128
+        && incoming().score is number && incoming().score >= 0;
+      allow delete: if isValidId(scoreId);
+    }
+
+    // Quiz Lessons
+    match /quizLessons/{lessonId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(lessonId)
+        && incoming().keys().hasAll(['id', 'title'])
+        && incoming().id is string && incoming().id.size() <= 128
+        && incoming().title is string && incoming().title.size() >= 1 && incoming().title.size() <= 500;
+      allow delete: if isValidId(lessonId);
     }
   }
 }

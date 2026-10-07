@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { QuizLesson, UserProfile, StudentExamScore } from '../types';
 import { AvatarDisplay } from './DoodleAvatars';
 import { QuizEditorModal } from './QuizEditorModal';
@@ -6,6 +6,7 @@ import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { GoogleSheetsModal } from './GoogleSheetsModal';
 import { sendScoreToGoogleSheets } from '../utils/googleSheets';
 import { triggerFestiveConfetti, triggerStarBurst } from '../utils/confetti';
+import { isClassMatching } from '../utils/classMatching';
 import {
   CheckCircle2,
   XCircle,
@@ -78,6 +79,15 @@ export const QuizView: React.FC<QuizViewProps> = ({
   const isTeacher = currentUser.role === 'teacher';
   const activeLesson = lessons.find((l) => l.id === activeLessonId);
 
+  // Filter visible lessons for students strictly based on targeted classroom per requirement 4:
+  // "4.ระบบจะจำการเข้าใช้งานจากการที่ครูระบุชั้นเรียนเท่านั้น เช่น หากครูไม่ได้ระบุชั้นเรียนที่นักเรียนอยู่นักเรียนคนอื่นจะไม่สามารถเห็นชิ้นงาน แบบทดสอบหรืออื่นๆได้"
+  const visibleLessons = useMemo(() => {
+    return lessons.filter((lesson) => {
+      if (isTeacher) return true;
+      return isClassMatching(currentUser.classRoom, lesson.targetClass);
+    });
+  }, [lessons, isTeacher, currentUser.classRoom]);
+
   const handleStartLesson = (lessonId: string) => {
     setActiveLessonId(lessonId);
     setCurrentQuestionIdx(0);
@@ -108,13 +118,18 @@ export const QuizView: React.FC<QuizViewProps> = ({
   };
 
   const handleSaveQuiz = (lessonPayload: QuizLesson) => {
+    const withOwner: QuizLesson = {
+      ...lessonPayload,
+      teacherId: lessonPayload.teacherId || currentUser.id,
+      authorTeacher: lessonPayload.authorTeacher || currentUser.name,
+    };
     if (editingQuiz) {
       if (onUpdateLesson) {
-        onUpdateLesson(lessonPayload);
+        onUpdateLesson(withOwner);
       }
     } else {
       if (onCreateLesson) {
-        onCreateLesson(lessonPayload);
+        onCreateLesson(withOwner);
       }
     }
     triggerFestiveConfetti();
@@ -729,8 +744,19 @@ export const QuizView: React.FC<QuizViewProps> = ({
         </div>
 
         {/* Lessons Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {lessons.map((lesson, idx) => (
+        {visibleLessons.length === 0 ? (
+          <div className="bg-white sketch-border rounded-[22px_16px_20px_18px] p-10 text-center shadow-[4px_4px_0px_#18181b]">
+            <div className="text-5xl mb-3">🧪</div>
+            <h4 className="text-lg font-black text-zinc-900">
+              ยังไม่มีแบบทดสอบสำหรับชั้นเรียน {currentUser.classRoom || ''}
+            </h4>
+            <p className="text-xs font-semibold text-zinc-500 mt-1">
+              ระบบจะแสดงเฉพาะแบบทดสอบที่ครูระบุสำหรับชั้นเรียนของคุณเท่านั้น
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {visibleLessons.map((lesson, idx) => (
             <div
               key={lesson.id}
               className="bg-white sketch-border-lg rounded-[22px_16px_20px_18px] p-6 shadow-[6px_6px_0px_#18181b] flex flex-col justify-between relative group hover:translate-y-[-3px] transition-all"
@@ -795,8 +821,9 @@ export const QuizView: React.FC<QuizViewProps> = ({
             </div>
           ))}
         </div>
-      </div>
-    );
+      )}
+    </div>
+  );
   }
 
   // ==========================================

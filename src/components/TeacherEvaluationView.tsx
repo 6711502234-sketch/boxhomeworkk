@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { UserProfile, TeacherEvaluation, TeacherReflectionTopic } from '../types';
+import React, { useState, useMemo } from 'react';
+import { UserProfile, TeacherEvaluation, TeacherReflectionTopic, AssessmentType } from '../types';
 import { AvatarDisplay } from './DoodleAvatars';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
-import { TeacherTopicModal } from './TeacherTopicModal';
+import { TeacherTopicModal, ASSESSMENT_OPTIONS } from './TeacherTopicModal';
 import { GoogleSheetsIcon } from './GoogleSheetsModal';
 import { triggerFestiveConfetti, triggerStarBurst } from '../utils/confetti';
+import { isClassMatching } from '../utils/classMatching';
 import {
   Star,
   Send,
@@ -94,13 +95,23 @@ export const TeacherEvaluationView: React.FC<TeacherEvaluationViewProps> = ({
 }) => {
   const isTeacher = currentUser.role === 'teacher';
 
+  // Filter visible topics for students strictly based on targeted classroom per requirement 4:
+  // "4.ระบบจะจำการเข้าใช้งานจากการที่ครูระบุชั้นเรียนเท่านั้น เช่น หากครูไม่ได้ระบุชั้นเรียนที่นักเรียนอยู่นักเรียนคนอื่นจะไม่สามารถเห็นชิ้นงาน แบบทดสอบหรืออื่นๆได้"
+  const visibleTopics = useMemo(() => {
+    return topics.filter((topic) => {
+      if (isTeacher) return true;
+      return isClassMatching(currentUser.classRoom, topic.targetClass);
+    });
+  }, [topics, isTeacher, currentUser.classRoom]);
+
   // Topic Management State (Teacher Post)
   const [isTopicModalOpen, setIsTopicModalOpen] = useState(false);
   const [editingTopic, setEditingTopic] = useState<TeacherReflectionTopic | null>(null);
   const [deletingTopic, setDeletingTopic] = useState<TeacherReflectionTopic | null>(null);
+  const [presetAssessmentType, setPresetAssessmentType] = useState<AssessmentType>('Assessment as Learning');
 
   // Student Form State
-  const defaultSelectedTopic = topics.find((t) => t.pinned) || topics[0] || null;
+  const defaultSelectedTopic = visibleTopics.find((t) => t.pinned) || visibleTopics[0] || null;
   const [selectedTopicId, setSelectedTopicId] = useState<string>(
     defaultSelectedTopic ? defaultSelectedTopic.id : 'general'
   );
@@ -138,12 +149,18 @@ export const TeacherEvaluationView: React.FC<TeacherEvaluationViewProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    const matchedTopic = topics.find((t) => t.id === selectedTopicId);
+    const matchedTopic =
+      visibleTopics.find((t) => t.id === selectedTopicId) ||
+      topics.find((t) => t.id === selectedTopicId) ||
+      defaultSelectedTopic ||
+      undefined;
 
     const newEval: TeacherEvaluation = {
       id: 'eval-' + Date.now(),
       topicId: matchedTopic ? matchedTopic.id : undefined,
       topicTitle: matchedTopic ? matchedTopic.title : 'สะท้อนคิดทั่วไป',
+      assessmentType: matchedTopic?.assessmentType,
+      teacherId: matchedTopic?.teacherId,
       studentId: currentUser.id,
       studentName: currentUser.name, // บันทึกชื่อจริงเสมอ เพื่อให้ครูสามารถตรวจสอบได้ว่าใครพิมพ์ แม้เลือกส่งแบบไม่ระบุตัวตน
       studentClass: currentUser.classRoom,
@@ -228,7 +245,7 @@ export const TeacherEvaluationView: React.FC<TeacherEvaluationViewProps> = ({
   const avgRating =
     evaluations.length > 0
       ? (evaluations.reduce((acc, curr) => acc + curr.ratingStars, 0) / evaluations.length).toFixed(1)
-      : '5.0';
+      : '0.0';
 
   const count5Star = evaluations.filter((e) => e.ratingStars === 5).length;
   const count4Star = evaluations.filter((e) => e.ratingStars === 4).length;
@@ -317,6 +334,7 @@ export const TeacherEvaluationView: React.FC<TeacherEvaluationViewProps> = ({
               type="button"
               onClick={() => {
                 setEditingTopic(null);
+                setPresetAssessmentType('Assessment as Learning');
                 setIsTopicModalOpen(true);
               }}
               className="px-4 py-2.5 bg-purple-400 hover:bg-purple-500 text-zinc-950 text-xs md:text-sm font-black rounded-xl sketch-btn flex items-center justify-center gap-2 cursor-pointer shadow-[3px_3px_0px_#18181b] self-start sm:self-auto"
@@ -327,10 +345,50 @@ export const TeacherEvaluationView: React.FC<TeacherEvaluationViewProps> = ({
           )}
         </div>
 
+        {/* Teacher Quick Assessment Topic Selector (Assessment as / for / of Learning) */}
+        {isTeacher && onCreateTopic && (
+          <div className="p-4 bg-purple-50/70 rounded-2xl border-2 border-purple-200 space-y-2.5">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <span className="text-xs sm:text-sm font-black text-purple-950">
+                เลือกหัวข้อในการโพสต์ (คลิกเพื่อตั้งโพสต์ตามประเภทการประเมิน):
+              </span>
+              <span className="text-[11px] font-bold text-purple-800">
+                3 หัวข้อหลักของการประเมินการเรียนรู้
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {ASSESSMENT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.type}
+                  type="button"
+                  onClick={() => {
+                    setEditingTopic(null);
+                    setPresetAssessmentType(opt.type);
+                    setIsTopicModalOpen(true);
+                  }}
+                  className="p-3 bg-white hover:bg-amber-50 rounded-xl border-2 border-zinc-900 shadow-[2px_2px_0px_#18181b] hover:translate-y-[-1px] transition-all text-left cursor-pointer flex flex-col justify-between gap-1"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span className="text-xs sm:text-sm font-black text-zinc-950">
+                      {opt.type}
+                    </span>
+                    <PlusCircle className="w-4 h-4 text-purple-700 shrink-0" />
+                  </div>
+                  <span className="text-[11px] font-bold text-zinc-600">
+                    {opt.thaiSubtitle}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* List of Teacher Topics */}
-        {topics.length === 0 ? (
+        {visibleTopics.length === 0 ? (
           <div className="p-6 text-center bg-purple-50/50 rounded-xl border-2 border-dashed border-purple-200">
-            <p className="text-sm font-bold text-zinc-700">ยังไม่มีหัวข้อที่ครูโพสต์</p>
+            <p className="text-sm font-bold text-zinc-700">
+              {isTeacher ? 'ยังไม่มีหัวข้อที่ครูโพสต์' : `ยังไม่มีหัวข้อชวนคุยสำหรับชั้นเรียน ${currentUser.classRoom || ''}`}
+            </p>
             {isTeacher && (
               <p className="text-xs text-purple-800 font-semibold mt-1">
                 คลิกปุ่ม "เขียน / โพสต์ข้อความใหม่" ด้านบนเพื่อเริ่มตั้งหัวข้อชวนคุยกับนักเรียน
@@ -339,7 +397,7 @@ export const TeacherEvaluationView: React.FC<TeacherEvaluationViewProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {topics.map((topic) => {
+            {visibleTopics.map((topic) => {
               const repliesCount = evaluations.filter((e) => e.topicId === topic.id).length;
               const isSelectedForStudent = selectedTopicId === topic.id;
               const isFilterActive = selectedTopicFilter === topic.id;
@@ -361,6 +419,11 @@ export const TeacherEvaluationView: React.FC<TeacherEvaluationViewProps> = ({
                           <span className="inline-flex items-center gap-1 text-[10px] font-black bg-rose-200 text-rose-950 px-2 py-0.5 rounded-full border border-zinc-900 shadow-[1px_1px_0px_#000]">
                             <Pin className="w-3 h-3 fill-rose-600 text-rose-700" />
                             <span>ปักหมุด</span>
+                          </span>
+                        )}
+                        {topic.assessmentType && (
+                          <span className="text-[10px] font-black bg-amber-200 text-stone-950 px-2.5 py-0.5 rounded-full border border-zinc-900">
+                            {topic.assessmentType}
                           </span>
                         )}
                         <span className="text-[10px] font-black bg-purple-100 text-purple-950 px-2 py-0.5 rounded-full border border-zinc-900">
@@ -1283,6 +1346,7 @@ export const TeacherEvaluationView: React.FC<TeacherEvaluationViewProps> = ({
         currentUser={currentUser}
         onSaveTopic={handleSaveTopic}
         initialTopic={editingTopic}
+        initialAssessmentType={presetAssessmentType}
       />
 
       {/* Confirmation Modal for Delete Evaluation */}

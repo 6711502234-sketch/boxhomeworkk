@@ -1,5 +1,12 @@
 import React from 'react';
 import { ActiveTab, UserRole } from '../types';
+import {
+  DoodleHomework,
+  DoodleQuizBulb,
+  DoodleTrophy,
+  DoodleReflectionChat,
+  DoodleChart,
+} from './DoodleIcons';
 
 interface NavigationTabsProps {
   activeTab: ActiveTab;
@@ -18,6 +25,7 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
     {
       id: 'homework' as ActiveTab,
       label: 'เพิ่มชิ้นงาน',
+      icon: DoodleHomework,
       badge: userRole === 'teacher' 
         ? (pendingHomeworkCount > 0 ? `${pendingHomeworkCount} รอตรวจ` : 'โพสต์ & ตรวจงาน') 
         : 'รับมอบหมายงาน',
@@ -25,16 +33,19 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
     {
       id: 'quiz' as ActiveTab,
       label: 'แบบทดสอบ',
+      icon: DoodleQuizBulb,
       badge: userRole === 'teacher' ? 'ดูคะแนนนักเรียน' : '2 บทเรียน',
     },
     {
       id: 'scorebook' as ActiveTab,
       label: 'สมุดคะแนน',
+      icon: DoodleTrophy,
       badge: userRole === 'teacher' ? 'ให้สติกเกอร์' : 'เกียรติยศ',
     },
     {
       id: 'reflection' as ActiveTab,
       label: 'มุมสะท้อน',
+      icon: DoodleReflectionChat,
       badge: userRole === 'teacher' ? 'อ่านเสียงสะท้อน' : '+20 ดาว',
     },
     ...(userRole === 'teacher'
@@ -42,6 +53,7 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
           {
             id: 'dashboard' as ActiveTab,
             label: 'Dashboard',
+            icon: DoodleChart,
             badge: 'กราฟประเมิน',
           },
         ]
@@ -52,6 +64,7 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
     <nav className={`grid ${userRole === 'teacher' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5' : 'grid-cols-2 md:grid-cols-4'} gap-2 sm:gap-3 w-full mb-6`}>
       {tabs.map((tab) => {
         const isActive = activeTab === tab.id;
+        const IconComp = tab.icon;
         return (
           <button
             key={tab.id}
@@ -63,6 +76,7 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
                 : 'bg-white text-stone-700 border-amber-200 hover:bg-amber-50/70 shadow-2xs'
             }`}
           >
+            <IconComp className="w-6 h-6 shrink-0" />
             <span className="tracking-tight text-center truncate font-bold text-base sm:text-lg md:text-xl">{tab.label}</span>
             {tab.badge && (
               <span

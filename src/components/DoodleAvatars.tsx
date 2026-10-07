@@ -1,4 +1,18 @@
 import React from 'react';
+import {
+  DoodleStar,
+  DoodleSparkles,
+  DoodleHomework,
+  DoodleQuizBulb,
+  DoodleTrophy,
+  DoodleReflectionChat,
+  DoodleChart,
+  DoodleSchool,
+  DoodleGradCap,
+  DoodleZap,
+  DoodleShield,
+  DoodleCheck,
+} from './DoodleIcons';
 
 interface DoodleAvatarProps {
   className?: string;
@@ -847,17 +861,32 @@ const AVATAR_MAP: Record<string, React.FC<DoodleAvatarProps>> = {
   '🐼': AvatarStudentBearDoodle,
   '🤖': AvatarStudentRobotDoodle,
   '🚀': AvatarStudentAstronautDoodle,
-  '⭐': AvatarTeacherStarMentor,
+  '⭐': DoodleStar,
+  '🌟': DoodleStar,
+  '✨': DoodleSparkles,
   '🦁': AvatarStudentBoyCap,
   '🦉': AvatarTeacherOwlWise,
   '👾': AvatarStudentDinoDoodle,
   '👩‍🏫': AvatarTeacherFemaleGlasses,
   '👨‍🏫': AvatarTeacherMaleTie,
   '🔬': AvatarTeacherScienceLab,
-  '📚': AvatarTeacherMaleTie,
-  '🎓': AvatarTeacherOwlWise,
-  '✨': AvatarTeacherStarMentor,
-  '🌟': AvatarTeacherStarMentor
+  '📚': DoodleHomework,
+  '📝': DoodleHomework,
+  '🎓': DoodleGradCap,
+  '💖': DoodleReflectionChat,
+  '💬': DoodleReflectionChat,
+  '⚡': DoodleZap,
+  '🎯': DoodleQuizBulb,
+  '💡': DoodleQuizBulb,
+  '🏆': DoodleTrophy,
+  '🎖️': DoodleTrophy,
+  '👑': DoodleTrophy,
+  '📊': DoodleChart,
+  '🏫': DoodleSchool,
+  '🛡️': DoodleShield,
+  '✅': DoodleCheck,
+  '🎉': DoodleSparkles,
+  '🔥': DoodleZap,
 };
 
 // ---------------------------------------------------------------------------
