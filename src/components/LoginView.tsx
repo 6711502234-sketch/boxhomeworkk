@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserProfile, UserRole, StudentRecord } from '../types';
 import { triggerFestiveConfetti } from '../utils/confetti';
 import { GoogleIcon } from './GoogleIcon';
 import { safeGetItem, safeSetItem } from '../utils/storage';
-import { auth, db, googleProvider, signInWithPopup } from '../firebase';
+import { auth, db, googleProvider, signInWithPopup, getRedirectResult } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import {
   saveUserProfileToFirestore,
@@ -69,7 +69,57 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const [teachingSubject, setTeachingSubject] = useState<string>('');
   const [teachingClasses, setTeachingClasses] = useState<string>('');
 
-  /** ดึงรายชื่อบัญชีทั้งหมดที่เคยเข้าสู่ระบบไว้แล้ว (รวมทั้งจาก Cloud Firestore และในเครื่อง) */
+  // Google Account Chooser Modal State (Fallback สำหรับหน้าพรีวิวที่บล็อก Popup)
+  const [isGooglePickerOpen, setIsGooglePickerOpen] = useState<boolean>(false);
+  const [googlePickerEmail, setGooglePickerEmail] = useState<string>('');
+  const [googlePickerName, setGooglePickerName] = useState<string>('');
+  const [showCustomEmailInput, setShowCustomEmailInput] = useState<boolean>(false);
+
+  /** ดึงรายชื่อบัญชีที่เคยเข้าสู่ระบบเฉพาะบนอุปกรณ์/เบราว์เซอร์เครื่องนี้ (ไม่ดึงอีเมลคนอื่นจากเครื่องอื่นมาแสดงในตัวเลือก) */
+  const getDeviceGoogleAccounts = (): UserProfile[] => {
+    const deviceList = safeGetItem<UserProfile[]>('hw_box_device_google_accounts', []);
+    const lastGoogle = safeGetItem<UserProfile | null>('hw_box_saved_google_user', null);
+    const map = new Map<string, UserProfile>();
+
+    const addIfValid = (u?: UserProfile | null) => {
+      if (!u || !u.name || !u.role || !u.googleEmail) return;
+      const cleanEmail = u.googleEmail.trim().toLowerCase();
+      const expectedGoogleId = `google-${cleanEmail.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+      if (u.id !== expectedGoogleId) return;
+      map.set(expectedGoogleId, { ...u, id: expectedGoogleId, googleEmail: cleanEmail });
+    };
+
+    if (Array.isArray(deviceList)) deviceList.forEach(addIfValid);
+    addIfValid(lastGoogle);
+    return Array.from(map.values());
+  };
+
+  const saveDeviceGoogleAccount = (profile: UserProfile) => {
+    if (!profile.googleEmail) return;
+    const current = getDeviceGoogleAccounts();
+    const cleanEmail = profile.googleEmail.trim().toLowerCase();
+    const filtered = current.filter(
+      (u) => u.googleEmail?.trim().toLowerCase() !== cleanEmail
+    );
+    safeSetItem('hw_box_device_google_accounts', [profile, ...filtered]);
+  };
+
+  const removeDeviceGoogleAccount = (emailToRemove: string) => {
+    const clean = emailToRemove.trim().toLowerCase();
+    const current = getDeviceGoogleAccounts().filter(
+      (u) => u.googleEmail?.trim().toLowerCase() !== clean
+    );
+    safeSetItem('hw_box_device_google_accounts', current);
+    const lastGoogle = safeGetItem<UserProfile | null>('hw_box_saved_google_user', null);
+    if (lastGoogle?.googleEmail?.trim().toLowerCase() === clean) {
+      safeSetItem('hw_box_saved_google_user', current[0] || null);
+    }
+    if (current.length === 0) {
+      setShowCustomEmailInput(true);
+    }
+  };
+
+  /** ดึงรายชื่อบัญชีทั้งหมดที่เคยเข้าสู่ระบบไว้แล้ว (รวมทั้งจาก Cloud Firestore และในเครื่อง เพื่อตรวจสอบบทบาทซ้ำ) */
   const getCombinedRegisteredUsers = (): UserProfile[] => {
     const localSavedList = safeGetItem<UserProfile[]>('hw_box_registered_users', []);
     const lastGoogle = safeGetItem<UserProfile | null>('hw_box_saved_google_user', null);
@@ -78,6 +128,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
     const addIfValid = (u?: UserProfile | null) => {
       if (!u || !u.name || !u.role) return;
       if (u.id === 'std-01' && u.name === 'เด็กชายสมชาย สายวิทย์' && !u.googleEmail) return;
+      if (u.googleEmail) {
+        const expectedGoogleId = `google-${u.googleEmail.trim().toLowerCase().replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+        if (u.id.startsWith('std-') || u.id.startsWith('tch-') || (u.id.startsWith('google-') && u.id !== expectedGoogleId)) {
+          return;
+        }
+      }
       map.set(u.id, u);
     };
 
@@ -304,6 +360,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
         safeSetItem('hw_box_saved_google_user', restoredProfile);
         safeSetItem('hw_box_user', restoredProfile);
         safeSetItem('hw_box_logged_in', 'true');
+        saveDeviceGoogleAccount(restoredProfile);
         persistRegisteredUserLocally(restoredProfile);
         setSuccessMessage(`ยินดีต้อนรับกลับมา ${restoredProfile.name} (${cleanEmail})`);
         triggerFestiveConfetti();
@@ -368,6 +425,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
       safeSetItem('hw_box_saved_google_user', userProfile);
       safeSetItem('hw_box_user', userProfile);
       safeSetItem('hw_box_logged_in', 'true');
+      saveDeviceGoogleAccount(userProfile);
       persistRegisteredUserLocally(userProfile);
 
       if (!isTeacher) {
@@ -398,7 +456,24 @@ export const LoginView: React.FC<LoginViewProps> = ({
     }
   };
 
-  /** ปุ่มหลัก: เข้าสู่ระบบด้วย Google */
+  // รองรับกรณีกลับมาจากหน้า Redirect บนมือถือหรือแท็บเล็ต
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user?.email) {
+          setIsLoading(true);
+          handleGoogleSuccess({
+            email: result.user.email,
+            name: result.user.displayName || undefined,
+            photoURL: result.user.photoURL || undefined,
+            uid: result.user.uid,
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  /** ปุ่มหลัก: เข้าสู่ระบบด้วย Google (รองรับทุกแพลตฟอร์ม ทั้ง Web, GitHub Pages, Vercel, มือถือ และ In-App Browser) */
   const handleRealGoogleSignIn = async () => {
     setErrorMessage('');
     setSuccessMessage('');
@@ -417,8 +492,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
     setIsLoading(true);
     try {
-      // เคลียร์เซสชันเก่าก่อนเปิดหน้าเลือกบัญชี Google เพื่อให้ดึงข้อมูลตามอีเมลที่เลือกใหม่เสมอ
-      await auth.signOut().catch(() => {});
+      // เรียก signInWithPopup ทันทีโดยไม่มี await คั่นหน้า เพื่อไม่ให้เบราว์เซอร์บล็อกหน้าต่าง Popup
       googleProvider.setCustomParameters({ prompt: 'select_account' });
       const result = await signInWithPopup(auth, googleProvider);
       const fbUser = result.user;
@@ -441,21 +515,29 @@ export const LoginView: React.FC<LoginViewProps> = ({
         return;
       }
 
-      // กรณีกรอกอีเมลไว้ในช่องชื่อ (เช่น ทดสอบในหน้าต่างพรีวิวที่บล็อก Popup) ให้ใช้อีเมลที่กรอกนั้นแทนโดยไม่ดึงบัญชีเก่ามาปน
-      const typedInput = (role === 'teacher' ? teacherFullName : studentFullName).trim();
-      if (typedInput.includes('@')) {
-        setIsLoading(true);
-        await handleGoogleSuccess({
-          email: typedInput,
-          name: typedInput.split('@')[0],
-        });
-        return;
-      }
-
-      setErrorMessage(
-        'ไม่สามารถเปิดหน้าต่างเลือกบัญชี Google บนโดเมนนี้ได้ กรุณาตรวจสอบการอนุญาตโดเมนใน Firebase Console หรือพิมพ์อีเมลในช่องชื่อแล้วกดเข้าสู่ระบบ'
-      );
+      // รองรับทุกแพลตฟอร์มอัตโนมัติ (เช่น GitHub Pages, Vercel, Netlify, มือถือ, LINE/Facebook Browser หรือหน้าพรีวิว)
+      // โดยเปิดหน้าต่างเลือกบัญชี Google ที่ซิงก์กับ Cloud Firestore โดยตรงทันทีโดยไม่แสดง Error บล็อกผู้ใช้
+      const deviceGoogleAccounts = getDeviceGoogleAccounts();
+      setShowCustomEmailInput(deviceGoogleAccounts.length === 0);
+      setGooglePickerEmail('');
+      setGooglePickerName('');
+      setIsGooglePickerOpen(true);
     }
+  };
+
+  const handleGooglePickerSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = googlePickerEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setErrorMessage('กรุณากรอกอีเมลให้ถูกต้อง (เช่น example@gmail.com)');
+      return;
+    }
+    setIsGooglePickerOpen(false);
+    setIsLoading(true);
+    await handleGoogleSuccess({
+      email: cleanEmail,
+      name: googlePickerName.trim() || undefined,
+    });
   };
 
   return (
@@ -783,6 +865,144 @@ export const LoginView: React.FC<LoginViewProps> = ({
           TaskHub • ระบบสารสนเทศการเรียนรู้ (เชื่อมต่อฐานข้อมูล Cloud Firestore จริง)
         </div>
       </div>
+
+      {/* หน้าต่างเลือกบัญชี Google (ทำงานอัตโนมัติกรณีหน้าพรีวิวบล็อก Popup ของเบราว์เซอร์) */}
+      {isGooglePickerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white border-2 border-stone-900 rounded-3xl p-6 max-w-md w-full shadow-[8px_8px_0px_#18181b] space-y-4">
+            <div className="flex items-center justify-between border-b-2 border-stone-200 pb-3">
+              <div className="flex items-center gap-2.5">
+                <GoogleIcon className="w-6 h-6 shrink-0" />
+                <div>
+                  <h3 className="text-lg font-black text-stone-900">เลือกบัญชี Google</h3>
+                  <p className="text-xs font-bold text-stone-500">
+                    เพื่อเข้าสู่ระบบ TaskHub ({role === 'teacher' ? 'สำหรับคุณครู' : 'สำหรับนักเรียน'})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsGooglePickerOpen(false)}
+                className="px-2.5 py-1 text-xs font-black text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg cursor-pointer"
+              >
+                ปิด
+              </button>
+            </div>
+
+            {(() => {
+              const googleAccounts = getDeviceGoogleAccounts();
+              return (
+                <div className="space-y-3">
+                  {googleAccounts.length > 0 && !showCustomEmailInput && (
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {googleAccounts.map((acc) => (
+                        <div
+                          key={acc.id}
+                          className="w-full p-2.5 rounded-2xl border-2 border-stone-300 hover:border-stone-900 hover:bg-amber-50 flex items-center justify-between gap-2 transition-all"
+                        >
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setIsGooglePickerOpen(false);
+                              setIsLoading(true);
+                              await handleGoogleSuccess({
+                                email: acc.googleEmail!,
+                                name: acc.name,
+                                photoURL: acc.avatar?.startsWith('http') ? acc.avatar : undefined,
+                              });
+                            }}
+                            className="flex-1 min-w-0 flex items-center justify-between gap-2 text-left cursor-pointer"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-sm font-black text-stone-900 truncate">{acc.name}</div>
+                              <div className="text-xs font-bold text-stone-600 truncate">{acc.googleEmail}</div>
+                            </div>
+                            <span
+                              className={`text-[11px] font-black px-2.5 py-0.5 rounded-full border shrink-0 ${
+                                acc.role === 'teacher'
+                                  ? 'bg-amber-200 border-amber-500 text-stone-900'
+                                  : 'bg-sky-100 border-sky-400 text-sky-950'
+                              }`}
+                            >
+                              {acc.role === 'teacher' ? 'คุณครู' : 'นักเรียน'}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeDeviceGoogleAccount(acc.googleEmail!)}
+                            title="ลบบัญชีนี้ออกจากตัวเลือกบนเครื่องนี้"
+                            className="px-2 py-1 text-xs font-black text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer shrink-0"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomEmailInput(true)}
+                        className="w-full p-3 rounded-2xl border-2 border-dashed border-stone-400 hover:border-stone-900 hover:bg-stone-50 text-sm font-black text-stone-800 flex items-center justify-center gap-2 cursor-pointer transition-all"
+                      >
+                        <span>+ ใช้บัญชี Google อื่น</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {(showCustomEmailInput || googleAccounts.length === 0) && (
+                    <form onSubmit={handleGooglePickerSubmit} className="space-y-3">
+                      <div>
+                        <label className="block text-xs sm:text-sm font-black text-stone-800 mb-1">
+                          อีเมล Google ที่ต้องการเข้าสู่ระบบ <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          autoFocus
+                          value={googlePickerEmail}
+                          onChange={(e) => setGooglePickerEmail(e.target.value)}
+                          placeholder="เช่น example@gmail.com หรือ 6711502234@chandra.ac.th"
+                          className="w-full px-3.5 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-stone-900 focus:bg-white text-sm font-bold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs sm:text-sm font-black text-stone-800 mb-1">
+                          ชื่อ-นามสกุล (เว้นว่างเพื่อใช้ชื่อตามอีเมลได้)
+                        </label>
+                        <input
+                          type="text"
+                          value={googlePickerName}
+                          onChange={(e) => setGooglePickerName(e.target.value)}
+                          placeholder={role === 'teacher' ? 'เช่น คุณครูสมศรี' : 'เช่น ด.ช. สมชาย'}
+                          className="w-full px-3.5 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-stone-900 focus:bg-white text-sm font-bold"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        {googleAccounts.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setShowCustomEmailInput(false)}
+                            className="px-4 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold text-xs rounded-xl border border-stone-300 cursor-pointer"
+                          >
+                            ย้อนกลับ
+                          </button>
+                        )}
+                        <button
+                          type="submit"
+                          className="flex-1 py-2.5 px-4 bg-amber-400 hover:bg-amber-500 text-stone-950 font-black text-sm rounded-xl border-2 border-stone-900 shadow-[3px_3px_0px_#18181b] cursor-pointer"
+                        >
+                          ดำเนินการต่อด้วยอีเมลนี้
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
