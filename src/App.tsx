@@ -83,290 +83,13 @@ import {
 } from './services/firebaseSync';
 import { isClassMatching } from './utils/classMatching';
 import { safeGetItem, safeSetItem } from './utils/storage';
-import {
-  AvatarStudentBoyGlasses,
-  AvatarTeacherFemaleGlasses,
-} from './components/DoodleAvatars';
-import { DoodleGradCap } from './components/DoodleIcons';
 
 import { Download } from 'lucide-react';
-
-/* ---------- ข้อมูลผู้ใช้ Google ที่รอกรอกโปรไฟล์ครั้งแรก ---------- */
-type PendingGoogleUser = {
-  uid: string;
-  email: string;
-  name: string;
-  photoURL: string;
-};
-
-/* ---------- หน้ากรอกข้อมูลครั้งแรก (First-time onboarding) ---------- */
-function OnboardingView({
-  pending,
-  onSubmit,
-  onCancel,
-}: {
-  pending: PendingGoogleUser;
-  onSubmit: (data: {
-    role: 'student' | 'teacher';
-    fullName: string;
-    level: string;
-    room: string;
-    studentNo: string;
-    subjectDepartment?: string;
-    teachingSubject?: string;
-    teachingClasses?: string;
-  }) => void;
-  onCancel: () => void;
-}) {
-  const [role, setRole] = useState<'student' | 'teacher'>('student');
-  const [fullName, setFullName] = useState(pending.name || '');
-  
-  // นักเรียน
-  const [level, setLevel] = useState('ม.2');
-  const [room, setRoom] = useState('1');
-  const [studentNo, setStudentNo] = useState('1');
-
-  // คุณครู
-  const [subjectDepartment, setSubjectDepartment] = useState('วิทยาศาสตร์และเทคโนโลยี');
-  const [teachingSubject, setTeachingSubject] = useState('');
-  const [teachingClasses, setTeachingClasses] = useState('');
-
-  const [formError, setFormError] = useState('');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!fullName.trim()) {
-      setFormError('กรุณากรอกชื่อ-นามสกุล');
-      return;
-    }
-    if (role === 'student') {
-      if (!level.trim() || !room.trim() || !studentNo.trim()) {
-        setFormError('กรุณากรอกระดับชั้น ห้อง และเลขที่ให้ครบถ้วน');
-        return;
-      }
-    } else {
-      if (!subjectDepartment.trim() || !teachingSubject.trim()) {
-        setFormError('กรุณากรอกหมวดวิชาและวิชาที่สอนให้ครบถ้วน');
-        return;
-      }
-    }
-
-    setFormError('');
-    onSubmit({
-      role,
-      fullName: fullName.trim(),
-      level: level.trim(),
-      room: room.trim(),
-      studentNo: studentNo.trim(),
-      subjectDepartment: subjectDepartment.trim(),
-      teachingSubject: teachingSubject.trim(),
-      teachingClasses: teachingClasses.trim(),
-    });
-  };
-
-  return (
-    <div className="min-h-screen bg-[#FFFDF5] notebook-grid flex items-center justify-center p-4 font-['JaoTomato_Thin','JaoTomato','เจ้ามะเขือเทศ','Mali',sans-serif]">
-      <div className="w-full max-w-lg bg-white border-2 border-zinc-900 rounded-3xl p-6 sm:p-8 shadow-[6px_6px_0px_#18181b] animate-in fade-in duration-200">
-        <div className="text-center mb-5">
-          <div className="inline-flex items-center justify-center p-3 bg-amber-200 border-2 border-zinc-900 rounded-2xl mb-2 shadow-[2px_2px_0px_#000]">
-            <DoodleGradCap className="w-8 h-8" />
-          </div>
-          <h2 className="text-2xl font-black text-stone-900">กรอกข้อมูลผู้ใช้งานครั้งแรก</h2>
-          <p className="text-sm font-medium text-stone-600 mt-1">
-            เชื่อมต่อผ่าน Google: <span className="font-bold text-amber-900">{pending.email}</span>
-          </p>
-        </div>
-
-        {/* Role Selector Tabs */}
-        <div className="mb-5">
-          <label className="block text-sm font-bold text-stone-800 mb-2">บทบาทของคุณในระบบ:</label>
-          <div className="grid grid-cols-2 gap-2 p-1.5 bg-[#FFFDF5] rounded-2xl border-2 border-zinc-900">
-            <button
-              type="button"
-              onClick={() => { setRole('student'); setFormError(''); }}
-              className={`py-3 px-4 rounded-xl text-base font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
-                role === 'student'
-                  ? 'bg-amber-400 text-stone-900 border-2 border-zinc-900 shadow-[2px_2px_0px_#18181b]'
-                  : 'bg-transparent text-stone-600 hover:bg-amber-100/50'
-              }`}
-            >
-              <AvatarStudentBoyGlasses className="w-6 h-6 shrink-0" />
-              <span>นักเรียน</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => { setRole('teacher'); setFormError(''); }}
-              className={`py-3 px-4 rounded-xl text-base font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
-                role === 'teacher'
-                  ? 'bg-amber-400 text-stone-900 border-2 border-zinc-900 shadow-[2px_2px_0px_#18181b]'
-                  : 'bg-transparent text-stone-600 hover:bg-amber-100/50'
-              }`}
-            >
-              <AvatarTeacherFemaleGlasses className="w-6 h-6 shrink-0" />
-              <span>คุณครู</span>
-            </button>
-          </div>
-        </div>
-
-        {formError && (
-          <div className="mb-4 p-3 bg-rose-50 border-2 border-rose-300 rounded-xl text-rose-700 text-sm font-bold">
-            ⚠️ {formError}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-bold text-stone-800 mb-1">
-              ชื่อ - นามสกุล <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder={role === 'student' ? 'ด.ช. / ด.ญ. / นาย / น.ส. ชื่อ นามสกุล' : 'คุณครูชื่อ นามสกุล'}
-              className="w-full px-4 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-zinc-900 focus:bg-white text-base font-medium transition-colors"
-              required
-            />
-          </div>
-
-          {/* Form Fields for Students */}
-          {role === 'student' ? (
-            <div className="space-y-3 pt-1">
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-sm font-bold text-stone-800 mb-1">
-                    ระดับชั้น <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    value={level}
-                    onChange={(e) => setLevel(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-zinc-900 text-base font-medium"
-                  >
-                    <option value="ม.1">ม.1</option>
-                    <option value="ม.2">ม.2</option>
-                    <option value="ม.3">ม.3</option>
-                    <option value="ม.4">ม.4</option>
-                    <option value="ม.5">ม.5</option>
-                    <option value="ม.6">ม.6</option>
-                    <option value="ป.4">ป.4</option>
-                    <option value="ป.5">ป.5</option>
-                    <option value="ป.6">ป.6</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-stone-800 mb-1">
-                    ห้อง <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={room}
-                    onChange={(e) => setRoom(e.target.value)}
-                    placeholder="เช่น 1, 2, 3"
-                    className="w-full px-3 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-zinc-900 text-base font-medium"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-stone-800 mb-1">
-                    เลขที่ <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="99"
-                    value={studentNo}
-                    onChange={(e) => setStudentNo(e.target.value)}
-                    placeholder="เช่น 15"
-                    className="w-full px-3 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-zinc-900 text-base font-medium"
-                    required
-                  />
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* Form Fields for Teachers */
-            <div className="space-y-3 pt-1">
-              <div>
-                <label className="block text-sm font-bold text-stone-800 mb-1">
-                  หมวดวิชา / กลุ่มสาระการเรียนรู้ <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={subjectDepartment}
-                  onChange={(e) => setSubjectDepartment(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-zinc-900 text-base font-medium"
-                >
-                  <option value="วิทยาศาสตร์และเทคโนโลยี">วิทยาศาสตร์และเทคโนโลยี</option>
-                  <option value="คณิตศาสตร์">คณิตศาสตร์</option>
-                  <option value="ภาษาไทย">ภาษาไทย</option>
-                  <option value="ภาษาต่างประเทศ">ภาษาต่างประเทศ</option>
-                  <option value="สังคมศึกษา ศาสนา และวัฒนธรรม">สังคมศึกษา ศาสนา และวัฒนธรรม</option>
-                  <option value="สุขศึกษาและพลศึกษา">สุขศึกษาและพลศึกษา</option>
-                  <option value="ศิลปะ ดนตรี และนาฏศิลป์">ศิลปะ ดนตรี และนาฏศิลป์</option>
-                  <option value="การงานอาชีพ">การงานอาชีพ</option>
-                  <option value="กิจกรรมพัฒนาผู้เรียน">กิจกรรมพัฒนาผู้เรียน</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-stone-800 mb-1">
-                  วิชาที่สอน <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={teachingSubject}
-                  onChange={(e) => setTeachingSubject(e.target.value)}
-                  placeholder="เช่น วิทยาการคำนวณ, ฟิสิกส์, คณิตศาสตร์พื้นฐาน"
-                  className="w-full px-4 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-zinc-900 text-base font-medium"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-stone-800 mb-1">
-                  ชั้นเรียนที่รับผิดชอบสอน (ระบุคั่นด้วยเครื่องหมายจุลภาค)
-                </label>
-                <input
-                  type="text"
-                  value={teachingClasses}
-                  onChange={(e) => setTeachingClasses(e.target.value)}
-                  placeholder="เช่น ม.2/1, ม.2/2, ม.2/3 (หรือ ทุกห้อง)"
-                  className="w-full px-4 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-zinc-900 text-base font-medium"
-                />
-                <span className="text-xs text-stone-500 block mt-1">
-                  * คุณครูสามารถมอบหมายงานและแบบทดสอบเฉพาะชั้นเรียนที่ระบุได้
-                </span>
-              </div>
-            </div>
-          )}
-
-          <div className="pt-3 space-y-2">
-            <button
-              type="submit"
-              className="w-full py-3.5 bg-amber-400 hover:bg-amber-500 text-stone-900 border-2 border-zinc-900 rounded-2xl text-base font-bold shadow-[3px_3px_0px_#18181b] cursor-pointer transition-all active:translate-y-0.5 active:shadow-xs"
-            >
-              บันทึกและเริ่มใช้งานระบบ
-            </button>
-            <button
-              type="button"
-              onClick={onCancel}
-              className="w-full py-2.5 text-stone-600 hover:text-stone-900 text-sm font-bold cursor-pointer"
-            >
-              ยกเลิกและออกจากระบบ
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
 
 export default function App() {
   /* ---------- 0. Auth state ---------- */
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [authReady, setAuthReady] = useState<boolean>(false);
-  const [pendingGoogleUser, setPendingGoogleUser] = useState<PendingGoogleUser | null>(null);
   const profileUnsubRef = useRef<null | (() => void)>(null);
 
   /* ---------- 1. User Profile ---------- */
@@ -458,90 +181,48 @@ export default function App() {
       const localLoggedIn = safeGetItem<string>('hw_box_logged_in', 'false') === 'true';
       const localUser = safeGetItem<UserProfile | null>('hw_box_user', null);
 
-      if (!fbUser || !localLoggedIn) {
-        if (localLoggedIn && localUser) {
+      if (!localLoggedIn) {
+        setIsAuthenticated(false);
+        setAuthReady(true);
+        return;
+      }
+
+      if (!fbUser) {
+        if (localUser) {
           setUser(localUser);
           setIsAuthenticated(true);
         } else {
           setIsAuthenticated(false);
         }
-        setPendingGoogleUser(null);
         setAuthReady(true);
         return;
       }
 
-      const ref = doc(db, 'users', fbUser.uid);
-      profileUnsubRef.current = onSnapshot(
-        ref,
-        async (snap) => {
-          if (!snap.exists()) {
-            // ตรวจสอบก่อนว่าอีเมลหรือชื่อนี้เคยสมัครไว้แล้วในเอกสารอื่นหรือไม่ (เช่น std-... หรือ tch-...)
-            const existing = await findExistingUserInFirestore({
-              uid: fbUser.uid,
-              email: fbUser.email ?? undefined,
-              name: fbUser.displayName ?? undefined,
-            });
-            if (existing) {
-              setUser(existing);
-              setPendingGoogleUser(null);
-              setIsAuthenticated(true);
-              setAuthReady(true);
-              safeSetItem('hw_box_saved_google_user', existing);
-              safeSetItem('hw_box_user', existing);
-              safeSetItem('hw_box_logged_in', 'true');
-              safeSetItem('hw_box_remember_login', 'true');
-              return;
-            }
-
-            // ล็อกอิน Google ครั้งแรกจริงๆ -> ให้กรอกข้อมูลก่อน
-            setPendingGoogleUser({
-              uid: fbUser.uid,
-              email: fbUser.email ?? '',
-              name: fbUser.displayName ?? '',
-              photoURL: fbUser.photoURL ?? '',
-            });
-            setIsAuthenticated(false);
-            setAuthReady(true);
-            return;
+      // หากมีเซสชันที่ล็อกอินไว้แล้ว ให้ดึงข้อมูลล่าสุดจาก Firestore โดยใช้โปรไฟล์เดิม (ไม่กระโดดไปหน้า Onboarding อื่น)
+      findExistingUserInFirestore({
+        uid: fbUser.uid,
+        email: fbUser.email ?? localUser?.googleEmail,
+        name: localUser?.name || (fbUser.displayName ?? undefined),
+      })
+        .then((existing) => {
+          if (existing) {
+            setUser(existing);
+            setIsAuthenticated(true);
+            safeSetItem('hw_box_saved_google_user', existing);
+            safeSetItem('hw_box_user', existing);
+          } else if (localUser) {
+            setUser(localUser);
+            setIsAuthenticated(true);
           }
-
-          const data = snap.data() as Record<string, unknown>;
-          const isStudent = (data.role as 'student' | 'teacher') !== 'teacher';
-          const gradeLevel = (data.gradeLevel as string) || (data.level as string) || 'ม.2';
-          const room = String(data.room ?? '1');
-          const teachingClasses = (data.teachingClasses as string[]) || (data.classRoom ? [String(data.classRoom)] : ['ม.2/1', 'ม.2/2']);
-
-          const profile: UserProfile = {
-            id: fbUser.uid,
-            name: (data.fullName as string) || (data.name as string) || fbUser.displayName || '',
-            role: (data.role as 'student' | 'teacher') || 'student',
-            classRoom: (data.classRoom as string) || (isStudent ? `${gradeLevel}/${room}` : teachingClasses.join(', ')),
-            studentNo: String(data.studentNo ?? (isStudent ? '1' : 'คุณครู')),
-            gradeLevel,
-            room,
-            subjectDepartment: (data.subjectDepartment as string) || undefined,
-            teachingSubject: (data.teachingSubject as string) || undefined,
-            teachingClasses,
-            avatar: (data.avatar as string) || fbUser.photoURL || (isStudent ? '🧑‍🎓' : '👩‍🏫'),
-            totalStars: Number(data.totalStars ?? (isStudent ? 100 : 500)),
-            unlockedStickers: (data.unlockedStickers as string[]) || ['first-step'],
-            studentIdCode: (data.studentIdCode as string) || (isStudent ? `STD-${fbUser.uid.slice(0, 5)}` : undefined),
-            teacherIdCode: (data.teacherIdCode as string) || (!isStudent ? `TCH-${fbUser.uid.slice(0, 5).toUpperCase()}` : undefined),
-            googleEmail: fbUser.email ?? '',
-          };
-
-          setUser(profile);
-          setPendingGoogleUser(null);
-          setIsAuthenticated(true);
           setAuthReady(true);
-          safeSetItem('hw_box_saved_google_user', profile);
-          safeSetItem('hw_box_remember_login', 'true');
-        },
-        (err) => {
-          console.error('โหลดโปรไฟล์ไม่สำเร็จ:', err);
+        })
+        .catch(() => {
+          if (localUser) {
+            setUser(localUser);
+            setIsAuthenticated(true);
+          }
           setAuthReady(true);
-        }
-      );
+        });
     });
 
     return () => {
@@ -549,180 +230,6 @@ export default function App() {
       if (profileUnsubRef.current) profileUnsubRef.current();
     };
   }, []);
-
-  /* ---------- Sign in ด้วย Google (ใครก็เข้าได้) ---------- */
-  const handleGoogleSignIn = useCallback(async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-      triggerStarBurst();
-    } catch (err: any) {
-      console.warn('Google sign-in ข้อผิดพลาด:', err);
-      throw err;
-    }
-  }, []);
-
-  /* ---------- บันทึกโปรไฟล์ครั้งแรก ---------- */
-  const handleCompleteOnboarding = useCallback(
-    async (data: {
-      role: 'student' | 'teacher';
-      fullName: string;
-      level: string;
-      room: string;
-      studentNo: string;
-      subjectDepartment?: string;
-      teachingSubject?: string;
-      teachingClasses?: string;
-    }) => {
-      if (!pendingGoogleUser) return;
-      const isStudent = data.role === 'student';
-      const cleanLevel = data.level.startsWith('ม.') || data.level.startsWith('ป.') ? data.level : `ม.${data.level}`;
-      const studentClass = `${cleanLevel}/${data.room}`;
-      const teacherClassRoom = data.teachingClasses || 'ทุกห้อง';
-      const classRoom = isStudent ? studentClass : teacherClassRoom;
-
-      const studentIdCode = isStudent 
-        ? `STD-${cleanLevel.replace(/[^0-9]/g, '')}${String(data.room).padStart(2, '0')}${String(data.studentNo).padStart(2, '0')}`
-        : undefined;
-      const teacherIdCode = !isStudent ? `TCH-${pendingGoogleUser.uid.slice(0, 5).toUpperCase()}` : undefined;
-
-      const teachingClassList = data.teachingClasses 
-        ? data.teachingClasses.split(',').map((c) => c.trim()).filter(Boolean)
-        : [];
-
-      const userDoc = {
-        role: data.role,
-        fullName: data.fullName,
-        name: data.fullName,
-        gradeLevel: cleanLevel,
-        room: String(data.room),
-        classRoom,
-        studentNo: isStudent ? String(data.studentNo) : 'คุณครู',
-        studentIdCode: studentIdCode || null,
-        teacherIdCode: teacherIdCode || null,
-        subjectDepartment: data.subjectDepartment || null,
-        teachingSubject: data.teachingSubject || null,
-        teachingClasses: teachingClassList,
-        avatar: pendingGoogleUser.photoURL || (isStudent ? '🧑‍🎓' : '👩‍🏫'),
-        totalStars: isStudent ? 100 : 500,
-        unlockedStickers: ['first-step'],
-        email: pendingGoogleUser.email,
-        googleEmail: pendingGoogleUser.email,
-        createdAt: serverTimestamp(),
-      };
-
-      await setDoc(doc(db, 'users', pendingGoogleUser.uid), userDoc, { merge: true });
-
-      // If Student: record to studentRecords in Firestore and local state
-      if (isStudent) {
-        const studentRecord: StudentRecord = {
-          id: pendingGoogleUser.uid,
-          name: data.fullName,
-          classRoom: studentClass,
-          studentNo: String(data.studentNo),
-          studentIdCode: studentIdCode || `STD-${pendingGoogleUser.uid.slice(0, 5)}`,
-          avatar: pendingGoogleUser.photoURL || '🧑‍🎓',
-          totalStars: 100,
-          unlockedStickers: ['first-step'],
-          homeworkCount: 0,
-          awardedBadges: [],
-          quizScores: {},
-        };
-
-        await setDoc(doc(db, 'studentRecords', pendingGoogleUser.uid), studentRecord, { merge: true });
-        setStudentRecords((prev) => {
-          const exists = prev.some((s) => s.id === studentRecord.id);
-          if (exists) return prev.map((s) => (s.id === studentRecord.id ? studentRecord : s));
-          return [studentRecord, ...prev];
-        });
-      }
-
-      // Create local user profile immediately and enter app
-      const profile: UserProfile = {
-        id: pendingGoogleUser.uid,
-        name: data.fullName,
-        role: data.role,
-        classRoom,
-        gradeLevel: isStudent ? cleanLevel : undefined,
-        room: isStudent ? String(data.room) : undefined,
-        studentNo: isStudent ? String(data.studentNo) : 'คุณครู',
-        studentIdCode,
-        teacherIdCode,
-        subjectDepartment: data.subjectDepartment,
-        teachingSubject: data.teachingSubject,
-        teachingClasses: teachingClassList,
-        avatar: pendingGoogleUser.photoURL || (isStudent ? '🧑‍🎓' : '👩‍🏫'),
-        totalStars: isStudent ? 100 : 500,
-        unlockedStickers: ['first-step'],
-        googleEmail: pendingGoogleUser.email,
-      };
-
-      setUser(profile);
-      setIsAuthenticated(true);
-      setPendingGoogleUser(null);
-      safeSetItem('hw_box_saved_google_user', profile);
-      safeSetItem('hw_box_user', profile);
-      safeSetItem('hw_box_logged_in', 'true');
-      triggerStarBurst();
-    },
-    [pendingGoogleUser]
-  );
-
-  /* ---------- Google Sign-in Fallback Handler (รองรับการระบุอีเมล Google) ---------- */
-  const handleSimulateGoogleSignIn = useCallback(
-    async (email: string, name?: string) => {
-      const cleanUid = 'google-' + email.toLowerCase().replace(/[^a-z0-9]/g, '-');
-      try {
-        const snap = await getDoc(doc(db, 'users', cleanUid));
-        if (snap.exists()) {
-          const data = snap.data() as Record<string, unknown>;
-          const isStudent = (data.role as 'student' | 'teacher') !== 'teacher';
-          const gradeLevel = (data.gradeLevel as string) || (data.level as string) || 'ม.2';
-          const room = String(data.room ?? '1');
-          const teachingClasses = (data.teachingClasses as string[]) || (data.classRoom ? [String(data.classRoom)] : ['ม.2/1', 'ม.2/2']);
-
-          const profile: UserProfile = {
-            id: cleanUid,
-            name: (data.fullName as string) || (data.name as string) || name || email.split('@')[0],
-            role: (data.role as 'student' | 'teacher') || 'student',
-            classRoom: (data.classRoom as string) || (isStudent ? `${gradeLevel}/${room}` : teachingClasses.join(', ')),
-            studentNo: String(data.studentNo ?? (isStudent ? '1' : 'คุณครู')),
-            gradeLevel,
-            room,
-            subjectDepartment: (data.subjectDepartment as string) || undefined,
-            teachingSubject: (data.teachingSubject as string) || undefined,
-            teachingClasses,
-            avatar: (data.avatar as string) || (isStudent ? '🧑‍🎓' : '👩‍🏫'),
-            totalStars: Number(data.totalStars ?? (isStudent ? 100 : 500)),
-            unlockedStickers: (data.unlockedStickers as string[]) || ['first-step'],
-            studentIdCode: (data.studentIdCode as string) || (isStudent ? `STD-${cleanUid.slice(0, 5)}` : undefined),
-            teacherIdCode: (data.teacherIdCode as string) || (!isStudent ? `TCH-${cleanUid.slice(0, 5).toUpperCase()}` : undefined),
-            googleEmail: email,
-          };
-
-          setUser(profile);
-          setIsAuthenticated(true);
-          setPendingGoogleUser(null);
-          safeSetItem('hw_box_saved_google_user', profile);
-          safeSetItem('hw_box_user', profile);
-          safeSetItem('hw_box_logged_in', 'true');
-          triggerStarBurst();
-          return;
-        }
-      } catch (e) {
-        console.warn('Check Firestore user error:', e);
-      }
-
-      // Not found in Firestore -> First time login! Prompt onboarding
-      setPendingGoogleUser({
-        uid: cleanUid,
-        email,
-        name: name || email.split('@')[0],
-        photoURL: '',
-      });
-      setIsAuthenticated(false);
-    },
-    []
-  );
 
   /* ---------- Persist to storage ---------- */
   useEffect(() => { safeSetItem('hw_box_user', user); }, [user]);
@@ -1651,16 +1158,6 @@ export default function App() {
       <div className="min-h-screen flex items-center justify-center bg-[#FFFDF5] text-stone-600">
         กำลังตรวจสอบการเข้าสู่ระบบ...
       </div>
-    );
-  }
-
-  if (pendingGoogleUser) {
-    return (
-      <OnboardingView
-        pending={pendingGoogleUser}
-        onSubmit={handleCompleteOnboarding}
-        onCancel={handleLogout}
-      />
     );
   }
 
