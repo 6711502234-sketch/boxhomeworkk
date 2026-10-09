@@ -22,10 +22,14 @@ service cloud.firestore {
     // User Profiles
     match /users/{userId} {
       allow get, list: if true;
-      allow create, update: if isValidId(userId)
+      allow create: if isValidId(userId)
         && incoming().keys().hasAll(['name', 'role'])
         && incoming().name is string && incoming().name.size() >= 1 && incoming().name.size() <= 200
         && incoming().role in ['student', 'teacher'];
+      allow update: if isValidId(userId)
+        && incoming().keys().hasAll(['name', 'role'])
+        && incoming().name is string && incoming().name.size() >= 1 && incoming().name.size() <= 200
+        && incoming().role == resource.data.role;
       allow delete: if isValidId(userId);
     }
 

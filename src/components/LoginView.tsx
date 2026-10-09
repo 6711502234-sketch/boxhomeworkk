@@ -2,9 +2,15 @@ import React, { useState } from 'react';
 import { UserProfile, UserRole, StudentRecord } from '../types';
 import { triggerFestiveConfetti } from '../utils/confetti';
 import { GoogleIcon } from './GoogleIcon';
-import { safeSetItem } from '../utils/storage';
-import { auth, googleProvider, signInWithPopup } from '../firebase';
-import { saveUserProfileToFirestore } from '../services/firebaseSync';
+import { safeGetItem, safeSetItem } from '../utils/storage';
+import { auth, db, googleProvider, signInWithPopup } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import {
+  saveUserProfileToFirestore,
+  saveStudentRecordToFirestore,
+  findExistingUserInFirestore,
+  normalizeIdentity,
+} from '../services/firebaseSync';
 import appletConfig from '../../firebase-applet-config.json';
 import {
   AvatarStudentBoyGlasses,
@@ -14,25 +20,28 @@ import {
   DoodleZap,
   DoodleCheck,
   DoodleShield,
+  DoodleCloud,
+  DoodleSparkles,
 } from './DoodleIcons';
 import {
   Loader2,
   AlertCircle,
   CheckCircle2,
+  Copy,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
 } from 'lucide-react';
-
-const firebaseConfig = {
-  oAuthClientId:
-    (import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID as string | undefined) ||
-    appletConfig.oAuthClientId,
-};
 
 interface LoginViewProps {
   onLogin: (user: UserProfile) => void;
   onGoogleSignIn?: () => void | Promise<void>;
   initialRole?: UserRole;
   studentRecords?: StudentRecord[];
+  registeredUsers?: UserProfile[];
   onRegisterStudent?: (record: StudentRecord, user: UserProfile) => void;
+  onOpenCloudModal?: () => void;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({
@@ -40,6 +49,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
   onGoogleSignIn,
   initialRole = 'student',
   studentRecords = [],
+  registeredUsers = [],
+  onOpenCloudModal,
 }) => {
   const [role, setRole] = useState<UserRole>(initialRole);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -58,101 +69,269 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const [teachingSubject, setTeachingSubject] = useState<string>('');
   const [teachingClasses, setTeachingClasses] = useState<string>('');
 
+  // Cloud Firestore Google Account Modal / Panel (when popup origin is not yet registered in Console)
+  const [showGoogleEmailPanel, setShowGoogleEmailPanel] = useState<boolean>(false);
+  const [googleEmailInput, setGoogleEmailInput] = useState<string>(() => {
+    const saved = safeGetItem<UserProfile | null>('hw_box_saved_google_user', null);
+    return saved?.googleEmail || '';
+  });
+  const [googleNameInput, setGoogleNameInput] = useState<string>(() => {
+    const saved = safeGetItem<UserProfile | null>('hw_box_saved_google_user', null);
+    return saved?.name || '';
+  });
+  const [showOriginGuide, setShowOriginGuide] = useState<boolean>(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const currentOrigin =
+    typeof window !== 'undefined' ? window.location.origin : 'https://localhost:3000';
+  const currentHostname =
+    typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+
+  const copyText = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).catch(() => {});
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  /** ดึงรายชื่อบัญชีทั้งหมดที่เคยเข้าสู่ระบบไว้แล้ว (รวมทั้งจาก Cloud Firestore และในเครื่อง) */
+  const getCombinedRegisteredUsers = (): UserProfile[] => {
+    const localSavedList = safeGetItem<UserProfile[]>('hw_box_registered_users', []);
+    const lastGoogle = safeGetItem<UserProfile | null>('hw_box_saved_google_user', null);
+    const map = new Map<string, UserProfile>();
+
+    const addIfValid = (u?: UserProfile | null) => {
+      if (!u || !u.name || !u.role) return;
+      if (u.id === 'std-01' && u.name === 'เด็กชายสมชาย สายวิทย์' && !u.googleEmail) return;
+      map.set(u.id, u);
+    };
+
+    registeredUsers.forEach(addIfValid);
+    if (Array.isArray(localSavedList)) localSavedList.forEach(addIfValid);
+    addIfValid(lastGoogle);
+
+    return Array.from(map.values());
+  };
+
+  const persistRegisteredUserLocally = (profile: UserProfile) => {
+    const current = getCombinedRegisteredUsers();
+    const normName = normalizeIdentity(profile.name);
+    const normEmail = normalizeIdentity(profile.googleEmail || profile.usernameOrEmail);
+    const filtered = current.filter(
+      (u) =>
+        u.id !== profile.id &&
+        !(normName && normalizeIdentity(u.name) === normName) &&
+        !(normEmail && normalizeIdentity(u.googleEmail || u.usernameOrEmail) === normEmail)
+    );
+    safeSetItem('hw_box_registered_users', [profile, ...filtered]);
+  };
+
   // Direct Student Login (1-step)
-  const handleStudentSubmit = (e?: React.FormEvent) => {
+  const handleStudentSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!studentFullName.trim()) {
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    const trimmedName = studentFullName.trim();
+    if (!trimmedName) {
       setErrorMessage('กรุณาระบุชื่อ-นามสกุลนักเรียน');
       return;
     }
 
-    const cleanLevel =
-      studentLevel.startsWith('ม.') || studentLevel.startsWith('ป.')
-        ? studentLevel
-        : `ม.${studentLevel}`;
-    const cleanRoom = studentRoom.trim() || '1';
-    const cleanNo = studentNo.trim() || '1';
-    const classRoom = `${cleanLevel}/${cleanRoom}`;
-    const cleanCode = `STD-${cleanLevel.replace(/[^0-9]/g, '')}${cleanNo.padStart(2, '0')}`;
+    setIsLoading(true);
+    try {
+      const localUsers = getCombinedRegisteredUsers();
+      const existingUser = await findExistingUserInFirestore({
+        name: trimmedName,
+        email: trimmedName.includes('@') ? trimmedName : undefined,
+        localUsers,
+      });
 
-    const match = studentRecords.find(
-      (s) =>
-        s.name === studentFullName.trim() ||
-        (s.classRoom === classRoom && s.studentNo === cleanNo)
-    );
+      if (existingUser) {
+        if (existingUser.role !== 'student') {
+          setErrorMessage(
+            `บัญชี "${existingUser.name}" เคยเข้าสู่ระบบในบทบาท "คุณครู" แล้ว ไม่สามารถเข้าสู่ระบบในบทบาท "นักเรียน" ได้อีก กรุณาเลือกบทบาท "สำหรับคุณครู"`
+          );
+          return;
+        }
+        safeSetItem('hw_box_logged_in', 'true');
+        safeSetItem('hw_box_user', existingUser);
+        persistRegisteredUserLocally(existingUser);
+        triggerFestiveConfetti();
+        onLogin(existingUser);
+        return;
+      }
 
-    const userProfile: UserProfile = {
-      id: match ? match.id : `std-${Date.now().toString().slice(-6)}`,
-      name: studentFullName.trim(),
-      role: 'student',
-      classRoom,
-      gradeLevel: cleanLevel,
-      room: cleanRoom,
-      studentNo: cleanNo,
-      studentIdCode: match?.studentIdCode || cleanCode,
-      avatar: match?.avatar || 'student-boy-glasses',
-      totalStars: match?.totalStars || 100,
-      unlockedStickers: match?.unlockedStickers || ['first-step'],
-    };
+      const cleanLevel =
+        studentLevel.startsWith('ม.') || studentLevel.startsWith('ป.')
+          ? studentLevel
+          : `ม.${studentLevel}`;
+      const cleanRoom = studentRoom.trim() || '1';
+      const cleanNo = studentNo.trim() || '1';
+      const classRoom = `${cleanLevel}/${cleanRoom}`;
+      const cleanCode = `STD-${cleanLevel.replace(/[^0-9]/g, '')}${cleanNo.padStart(2, '0')}`;
 
-    safeSetItem('hw_box_logged_in', 'true');
-    safeSetItem('hw_box_user', userProfile);
-    saveUserProfileToFirestore(userProfile).catch(() => {});
-    triggerFestiveConfetti();
-    onLogin(userProfile);
+      const match = studentRecords.find(
+        (s) =>
+          s.name === trimmedName ||
+          (s.classRoom === classRoom && s.studentNo === cleanNo)
+      );
+
+      const userProfile: UserProfile = {
+        id: match ? match.id : `std-${Date.now().toString().slice(-6)}`,
+        name: trimmedName,
+        role: 'student',
+        classRoom,
+        gradeLevel: cleanLevel,
+        room: cleanRoom,
+        studentNo: cleanNo,
+        studentIdCode: match?.studentIdCode || cleanCode,
+        avatar: match?.avatar || 'student-boy-glasses',
+        totalStars: match?.totalStars || 100,
+        unlockedStickers: match?.unlockedStickers || ['first-step'],
+      };
+
+      safeSetItem('hw_box_logged_in', 'true');
+      safeSetItem('hw_box_user', userProfile);
+      persistRegisteredUserLocally(userProfile);
+      await saveUserProfileToFirestore(userProfile).catch(() => {});
+      triggerFestiveConfetti();
+      onLogin(userProfile);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Direct Teacher Login (1-step)
-  const handleTeacherSubmit = (e?: React.FormEvent) => {
+  const handleTeacherSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!teacherFullName.trim()) {
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    const trimmedName = teacherFullName.trim();
+    if (!trimmedName) {
       setErrorMessage('กรุณาระบุชื่อ-นามสกุลคุณครู');
       return;
     }
 
-    const classList = teachingClasses
-      .split(',')
-      .map((c) => c.trim())
-      .filter(Boolean);
+    setIsLoading(true);
+    try {
+      const localUsers = getCombinedRegisteredUsers();
+      const existingUser = await findExistingUserInFirestore({
+        name: trimmedName,
+        email: trimmedName.includes('@') ? trimmedName : undefined,
+        localUsers,
+      });
 
-    const cleanTeacherKey = teacherFullName
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, '-');
+      if (existingUser) {
+        if (existingUser.role !== 'teacher') {
+          setErrorMessage(
+            `บัญชี "${existingUser.name}" เคยเข้าสู่ระบบในบทบาท "นักเรียน" แล้ว ไม่สามารถเข้าสู่ระบบในบทบาท "คุณครู" ได้อีก กรุณาเลือกบทบาท "สำหรับนักเรียน"`
+          );
+          return;
+        }
+        safeSetItem('hw_box_logged_in', 'true');
+        safeSetItem('hw_box_user', existingUser);
+        persistRegisteredUserLocally(existingUser);
+        triggerFestiveConfetti();
+        onLogin(existingUser);
+        return;
+      }
 
-    const userProfile: UserProfile = {
-      id: `tch-${cleanTeacherKey}`,
-      name: teacherFullName.trim(),
-      role: 'teacher',
-      classRoom: teachingClasses.trim() || 'ทุกห้อง',
-      studentNo: 'คุณครู',
-      subjectDepartment: subjectDepartment.trim() || 'วิทยาศาสตร์และเทคโนโลยี',
-      teachingSubject: teachingSubject.trim() || undefined,
-      teachingClasses: classList,
-      teacherIdCode: `TCH-${Math.floor(100 + Math.random() * 900)}`,
-      avatar: 'teacher-female-glasses',
-      totalStars: 0,
-      unlockedStickers: [],
-    };
+      const classList = teachingClasses
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean);
 
-    safeSetItem('hw_box_logged_in', 'true');
-    safeSetItem('hw_box_user', userProfile);
-    saveUserProfileToFirestore(userProfile).catch(() => {});
-    triggerFestiveConfetti();
-    onLogin(userProfile);
+      const cleanTeacherKey = trimmedName
+        .toLowerCase()
+        .replace(/\s+/g, '-');
+
+      const userProfile: UserProfile = {
+        id: `tch-${cleanTeacherKey}`,
+        name: trimmedName,
+        role: 'teacher',
+        classRoom: teachingClasses.trim() || 'ทุกห้อง',
+        studentNo: 'คุณครู',
+        subjectDepartment: subjectDepartment.trim() || 'วิทยาศาสตร์และเทคโนโลยี',
+        teachingSubject: teachingSubject.trim() || undefined,
+        teachingClasses: classList,
+        teacherIdCode: `TCH-${Math.floor(100 + Math.random() * 900)}`,
+        avatar: 'teacher-female-glasses',
+        totalStars: 0,
+        unlockedStickers: [],
+      };
+
+      safeSetItem('hw_box_logged_in', 'true');
+      safeSetItem('hw_box_user', userProfile);
+      persistRegisteredUserLocally(userProfile);
+      await saveUserProfileToFirestore(userProfile).catch(() => {});
+      triggerFestiveConfetti();
+      onLogin(userProfile);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  /** สร้างโปรไฟล์จากข้อมูล Google จริง แล้วพาเข้าระบบ */
+  /** สร้างหรือดึงโปรไฟล์จากข้อมูล Google จริงบน Cloud Firestore (บัญชีที่เคยเข้าสู่ระบบแล้วจะไม่สามารถเข้าสู่ระบบบทบาทอื่นได้อีก) */
   const handleGoogleSuccess = async (googleUser: {
     email: string;
     name?: string;
     photoURL?: string;
     uid?: string;
   }) => {
-    const isTeacher = role === 'teacher';
-    const emailPrefix = googleUser.email.split('@')[0];
-    const cleanId = (googleUser.uid || googleUser.email).replace(/[^a-zA-Z0-9]/g, '-');
+    setErrorMessage('');
+    setSuccessMessage('');
 
+    const isTeacher = role === 'teacher';
+    const cleanEmail = googleUser.email.trim().toLowerCase();
+    const emailPrefix = cleanEmail.split('@')[0];
+    const cleanId = (googleUser.uid || cleanEmail).replace(/[^a-zA-Z0-9_-]/g, '-');
+    const roleLabel = (r: UserRole) => (r === 'teacher' ? 'คุณครู' : 'นักเรียน');
+
+    // 1. ตรวจสอบว่าบัญชี Google นี้เคยเข้าสู่ระบบไว้แล้วหรือไม่ (ในทุกบทบาท)
+    try {
+      const localUsers = getCombinedRegisteredUsers();
+      const existingAccount = await findExistingUserInFirestore({
+        uid: googleUser.uid,
+        email: cleanEmail,
+        name: googleUser.name,
+        localUsers,
+      });
+
+      if (existingAccount) {
+        // หากเคยเข้าสู่ระบบไว้แล้วในบทบาทอื่น -> บล็อกทันที ไม่สามารถเข้าสู่ระบบบทบาทอื่นได้อีก!
+        if (existingAccount.role !== role) {
+          auth.signOut().catch(() => {});
+          safeSetItem('hw_box_logged_in', 'false');
+          setErrorMessage(
+            `บัญชี Google "${cleanEmail}" (${existingAccount.name}) เคยเข้าสู่ระบบในบทบาท "${roleLabel(existingAccount.role)}" แล้ว ไม่สามารถเข้าสู่ระบบในบทบาท "${roleLabel(role)}" ได้อีก กรุณาเลือกแท็บ "สำหรับ${roleLabel(existingAccount.role)}" เพื่อเข้าใช้งาน`
+          );
+          setIsLoading(false);
+          return;
+        }
+
+        // บทบาทตรงกับที่เคยเข้าสู่ระบบไว้ -> เข้าสู่ระบบเดิมได้ทันที
+        const restoredProfile: UserProfile = {
+          ...existingAccount,
+          googleEmail: existingAccount.googleEmail || cleanEmail,
+          usernameOrEmail: existingAccount.usernameOrEmail || cleanEmail,
+        };
+        safeSetItem('hw_box_logged_in', 'true');
+        safeSetItem('hw_box_saved_google_user', restoredProfile);
+        safeSetItem('hw_box_user', restoredProfile);
+        persistRegisteredUserLocally(restoredProfile);
+        setSuccessMessage(`ยินดีต้อนรับกลับมา ${restoredProfile.name}`);
+        triggerFestiveConfetti();
+        setIsLoading(false);
+        onLogin(restoredProfile);
+        return;
+      }
+    } catch (e) {
+      console.warn('Firestore profile lookup notice:', e);
+    }
+
+    // 2. กรณีไม่เคยเข้าสู่ระบบมาก่อน -> สร้างโปรไฟล์ผูกกับบทบาทที่เลือกไว้ถาวร
+    const profileDocId = `google-${cleanId}`;
     const existingRecord = studentRecords.find(
       (s) => s.id === `std-${cleanId}` || s.studentIdCode === emailPrefix
     );
@@ -167,14 +346,16 @@ export const LoginView: React.FC<LoginViewProps> = ({
       .map((c) => c.trim())
       .filter(Boolean);
 
+    const resolvedName =
+      (isTeacher ? teacherFullName.trim() : studentFullName.trim()) ||
+      googleUser.name?.trim() ||
+      (isTeacher
+        ? `คุณครู${emailPrefix}`
+        : existingRecord?.name || `นักเรียน (${emailPrefix})`);
+
     const userProfile: UserProfile = {
-      id: (isTeacher ? 'tch-' : 'std-') + cleanId,
-      name:
-        (isTeacher ? teacherFullName.trim() : studentFullName.trim()) ||
-        googleUser.name ||
-        (isTeacher
-          ? `คุณครู (${emailPrefix})`
-          : existingRecord?.name || `นักเรียน (${emailPrefix})`),
+      id: profileDocId,
+      name: resolvedName,
       role,
       classRoom: isTeacher ? teachingClasses.trim() || 'ทุกห้อง' : studentClass,
       gradeLevel: isTeacher ? undefined : cleanLevel,
@@ -182,7 +363,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
       studentNo: isTeacher ? 'คุณครู' : existingRecord?.studentNo || studentNo || '01',
       studentIdCode: isTeacher
         ? undefined
-        : existingRecord?.studentIdCode || emailPrefix,
+        : existingRecord?.studentIdCode || `STD-${emailPrefix.slice(0, 6).toUpperCase()}`,
+      teacherIdCode: isTeacher ? `TCH-${cleanId.slice(0, 5).toUpperCase()}` : undefined,
       subjectDepartment: isTeacher ? subjectDepartment : undefined,
       teachingSubject: isTeacher ? teachingSubject.trim() || undefined : undefined,
       teachingClasses: isTeacher ? classList : undefined,
@@ -191,18 +373,36 @@ export const LoginView: React.FC<LoginViewProps> = ({
         (isTeacher ? 'teacher-female-glasses' : 'student-boy-glasses'),
       totalStars: isTeacher ? 0 : (existingRecord?.totalStars ?? 100),
       unlockedStickers: isTeacher ? [] : (existingRecord?.unlockedStickers || ['first-step']),
-      googleEmail: googleUser.email,
-      usernameOrEmail: googleUser.email,
+      googleEmail: cleanEmail,
+      usernameOrEmail: cleanEmail,
     };
 
     try {
       safeSetItem('hw_box_logged_in', 'true');
       safeSetItem('hw_box_saved_google_user', userProfile);
       safeSetItem('hw_box_user', userProfile);
+      persistRegisteredUserLocally(userProfile);
 
-      saveUserProfileToFirestore(userProfile).catch((err) =>
+      await saveUserProfileToFirestore(userProfile).catch((err) =>
         console.warn('Firestore sync warning:', err)
       );
+
+      if (!isTeacher) {
+        const newStudentRecord: StudentRecord = {
+          id: userProfile.id,
+          name: userProfile.name,
+          classRoom: userProfile.classRoom,
+          studentNo: userProfile.studentNo,
+          studentIdCode: userProfile.studentIdCode || `STD-${emailPrefix.slice(0, 6).toUpperCase()}`,
+          avatar: userProfile.avatar,
+          totalStars: userProfile.totalStars,
+          unlockedStickers: userProfile.unlockedStickers,
+          awardedBadges: existingRecord?.awardedBadges || [],
+          homeworkCount: existingRecord?.homeworkCount || 0,
+          quizScores: existingRecord?.quizScores || {},
+        };
+        await saveStudentRecordToFirestore(newStudentRecord).catch(() => {});
+      }
 
       setSuccessMessage(`ยินดีต้อนรับ ${userProfile.name}`);
       triggerFestiveConfetti();
@@ -215,47 +415,23 @@ export const LoginView: React.FC<LoginViewProps> = ({
     }
   };
 
-  /** ตัวสำรอง: Google Identity Services เมื่อ popup ของ Firebase ใช้ไม่ได้ */
-  const trySignInWithGis = (): boolean => {
-    const gis = (window as any).google?.accounts?.oauth2;
-    if (!gis || !firebaseConfig.oAuthClientId) return false;
-
-    try {
-      const tokenClient = gis.initTokenClient({
-        client_id: firebaseConfig.oAuthClientId,
-        scope: 'email profile openid',
-        callback: async (tokenResponse: any) => {
-          if (tokenResponse.error) {
-            setIsLoading(false);
-            if (tokenResponse.error !== 'access_denied') {
-              setErrorMessage('การเข้าสู่ระบบ Google ถูกยกเลิก หรือเกิดข้อผิดพลาด');
-            }
-            return;
-          }
-          try {
-            const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-              headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-            });
-            const info = await res.json();
-            if (!info?.email) throw new Error('ไม่พบข้อมูลอีเมลจาก Google');
-            await handleGoogleSuccess({
-              email: info.email,
-              name: info.name,
-              photoURL: info.picture,
-              uid: info.sub,
-            });
-          } catch (fetchErr: any) {
-            setErrorMessage('ดึงข้อมูลจาก Google ไม่สำเร็จ: ' + fetchErr.message);
-            setIsLoading(false);
-          }
-        },
-      });
-      tokenClient.requestAccessToken({ prompt: 'select_account' });
-      return true;
-    } catch (gisErr) {
-      console.warn('Google Identity Services fallback notice:', gisErr);
-      return false;
+  /** เข้าสู่ระบบด้วยอีเมล Google โดยตรงและซิงก์กับ Cloud Firestore (ไม่ต้องรอตั้งค่า JavaScript Origin) */
+  const handleDirectGoogleEmailSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+    const cleanEmail = googleEmailInput.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setErrorMessage('กรุณากรอกอีเมล Google หรืออีเมลสถานศึกษาให้ถูกต้อง (เช่น name@gmail.com)');
+      return;
     }
+    setIsLoading(true);
+    await handleGoogleSuccess({
+      email: cleanEmail,
+      name:
+        googleNameInput.trim() ||
+        (role === 'teacher' ? teacherFullName.trim() : studentFullName.trim()) ||
+        undefined,
+    });
   };
 
   /** ปุ่มหลัก: เข้าสู่ระบบด้วย Google */
@@ -268,7 +444,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
         setIsLoading(true);
         await onGoogleSignIn();
       } catch (err: any) {
-        setErrorMessage(err?.message || 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ');
+        setShowGoogleEmailPanel(true);
       } finally {
         setIsLoading(false);
       }
@@ -292,28 +468,20 @@ export const LoginView: React.FC<LoginViewProps> = ({
       }
       throw new Error('บัญชี Google นี้ไม่มีอีเมลที่ใช้งานได้');
     } catch (err: any) {
-      console.warn('Firebase signInWithPopup error:', err);
-
-      if (err?.code === 'auth/popup-closed-by-user') {
-        setErrorMessage('ปิดหน้าต่าง Google ก่อนดำเนินการเสร็จสิ้น');
-        setIsLoading(false);
-        return;
-      }
-      if (err?.code === 'auth/cancelled-popup-request') {
-        setIsLoading(false);
-        return;
-      }
-
-      if (trySignInWithGis()) return;
-
-      if (err?.code === 'auth/popup-blocked') {
-        setErrorMessage('เบราว์เซอร์บล็อกป๊อปอัป กรุณาอนุญาตป๊อปอัป หรือกดปุ่มเข้าสู่ระบบทันทีด้านบน');
-      } else if (err?.code === 'auth/unauthorized-domain') {
-        setErrorMessage('โดเมนนี้ยังไม่ได้รับอนุญาตใน Firebase Console สามารถกรอกชื่อเพื่อเข้าใช้งานทันทีได้');
-      } else {
-        setErrorMessage(err?.message || 'ไม่สามารถเชื่อมต่อระบบ Google ได้ กรุณาลองใหม่');
-      }
+      console.warn('Firebase signInWithPopup notice:', err?.code || err);
       setIsLoading(false);
+
+      if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
+        setShowGoogleEmailPanel(true);
+        return;
+      }
+
+      setShowGoogleEmailPanel(true);
+      if (role === 'teacher' && teacherFullName.trim() && !googleNameInput) {
+        setGoogleNameInput(teacherFullName.trim());
+      } else if (role === 'student' && studentFullName.trim() && !googleNameInput) {
+        setGoogleNameInput(studentFullName.trim());
+      }
     }
   };
 
@@ -491,6 +659,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
                 <button
                   type="submit"
+                  disabled={isLoading}
                   className="w-full py-3.5 px-5 bg-amber-400 hover:bg-amber-500 active:translate-y-0.5 text-stone-950 text-base sm:text-lg font-black rounded-xl border-2 border-stone-900 shadow-[3px_3px_0px_#18181b] flex items-center justify-center gap-2 cursor-pointer transition-all"
                 >
                   <DoodleZap className="w-5 h-5" />
@@ -559,7 +728,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm sm:text-base font-black text-stone-800 mb-1">
-                      วิชาที่สอน <span className="text-rose-500">*</span>
+                      วิชาที่สอน (ระบุภายหลังได้)
                     </label>
                     <input
                       type="text"
@@ -567,7 +736,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
                       onChange={(e) => setTeachingSubject(e.target.value)}
                       placeholder="เช่น วิทยาการคำนวณ"
                       className="w-full px-4 py-3 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-stone-900 text-base font-bold"
-                      required
                     />
                   </div>
 
@@ -587,6 +755,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
                 <button
                   type="submit"
+                  disabled={isLoading}
                   className="w-full py-3.5 px-5 bg-amber-400 hover:bg-amber-500 active:translate-y-0.5 text-stone-950 text-base sm:text-lg font-black rounded-xl border-2 border-stone-900 shadow-[3px_3px_0px_#18181b] flex items-center justify-center gap-2 cursor-pointer transition-all"
                 >
                   <DoodleZap className="w-5 h-5" />
@@ -597,7 +766,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
           )}
 
           {/* ปุ่มเข้าสู่ระบบด้วย Google */}
-          <div className="mt-4 pt-4 border-t border-stone-200">
+          <div className="mt-4 pt-4 border-t border-stone-200 space-y-3">
             <button
               type="button"
               onClick={handleRealGoogleSignIn}
@@ -618,18 +787,213 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 </>
               )}
             </button>
+
+            {/* แผงเข้าสู่ระบบด้วยอีเมล Google เชื่อมต่อ Cloud Firestore โดยตรง (ทำงานได้ทันทีแม้ยังไม่ได้ลงทะเบียน JavaScript Origin) */}
+            {showGoogleEmailPanel && (
+              <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/90 border-2 border-stone-900 shadow-[3px_3px_0px_#18181b] space-y-3.5 animate-in fade-in duration-200">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <GoogleIcon className="w-5 h-5 shrink-0" />
+                    <div>
+                      <h3 className="text-sm sm:text-base font-black text-stone-900">
+                        เข้าสู่ระบบด้วยบัญชี Google (ซิงก์ Cloud Firestore ทันที)
+                      </h3>
+                      <p className="text-xs font-bold text-stone-600">
+                        ใช้งานได้ทันทีโดยไม่ต้องรอตั้งค่า JavaScript Origin ใน Google Cloud Console
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowGoogleEmailPanel(false)}
+                    className="text-xs font-black text-stone-500 hover:text-stone-900 px-2 py-1 rounded-lg border border-stone-300 bg-white cursor-pointer"
+                  >
+                    ปิด
+                  </button>
+                </div>
+
+                <form onSubmit={handleDirectGoogleEmailSubmit} className="space-y-3">
+                  <div>
+                    <label className="block text-xs sm:text-sm font-black text-stone-800 mb-1">
+                      อีเมล Google / อีเมลสถานศึกษา <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={googleEmailInput}
+                      onChange={(e) => setGoogleEmailInput(e.target.value)}
+                      placeholder="เช่น 6711502234@chandra.ac.th หรือ name@gmail.com"
+                      className="w-full px-3.5 py-2.5 bg-white border-2 border-stone-900 rounded-xl text-sm sm:text-base font-bold"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs sm:text-sm font-black text-stone-800 mb-1">
+                      ชื่อที่แสดงในระบบ ({role === 'teacher' ? 'คุณครู' : 'นักเรียน'})
+                    </label>
+                    <input
+                      type="text"
+                      value={googleNameInput}
+                      onChange={(e) => setGoogleNameInput(e.target.value)}
+                      placeholder={
+                        role === 'teacher'
+                          ? 'เช่น คุณครูนิภาภรณ์ ใจดี (เว้นว่างเพื่อใช้ชื่อจากอีเมลได้)'
+                          : 'เช่น ด.ช. สมชาย สายวิทย์'
+                      }
+                      className="w-full px-3.5 py-2.5 bg-white border-2 border-stone-300 focus:border-stone-900 rounded-xl text-sm sm:text-base font-bold"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGoogleEmailInput('6711502234@chandra.ac.th');
+                      }}
+                      className="text-xs font-black px-2.5 py-1.5 rounded-lg bg-white border border-stone-400 hover:border-stone-900 text-stone-700 cursor-pointer flex items-center gap-1"
+                    >
+                      <DoodleSparkles className="w-3.5 h-3.5" />
+                      <span>ใช้ 6711502234@chandra.ac.th</span>
+                    </button>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full py-3 px-4 bg-emerald-500 hover:bg-emerald-600 text-white font-black rounded-xl border-2 border-stone-900 shadow-[2px_2px_0px_#18181b] flex items-center justify-center gap-2 cursor-pointer transition-all text-sm sm:text-base"
+                  >
+                    <DoodleCheck className="w-5 h-5" />
+                    <span>เข้าใช้งานด้วยอีเมล Google นี้ทันที</span>
+                  </button>
+                </form>
+
+                {/* คู่มือสำหรับผู้พัฒนาในการลงทะเบียน JavaScript Origin & Authorized Domain */}
+                <div className="pt-2 border-t border-amber-300">
+                  <button
+                    type="button"
+                    onClick={() => setShowOriginGuide((v) => !v)}
+                    className="w-full flex items-center justify-between text-xs font-black text-stone-700 hover:text-stone-950 py-1 cursor-pointer"
+                  >
+                    <span>
+                      วิธีแก้แจ้งเตือน &quot;โปรดลงทะเบียน JavaScript origin ใน Google Cloud Console&quot;
+                    </span>
+                    {showOriginGuide ? (
+                      <ChevronUp className="w-4 h-4 shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 shrink-0" />
+                    )}
+                  </button>
+
+                  {showOriginGuide && (
+                    <div className="mt-2 p-3 bg-white rounded-xl border-2 border-stone-800 text-xs space-y-2.5 text-stone-700">
+                      <p className="font-bold text-stone-900">
+                        หากต้องการเปิดหน้าต่าง Popup ของ Google โดยตรงบนโดเมนนี้ ให้คัดลอกค่าด้านล่างไปวางในคอนโซล:
+                      </p>
+
+                      <div className="space-y-1">
+                        <div className="font-black text-stone-800">
+                          1. เพิ่มใน Firebase Console &rarr; Authentication &rarr; Settings &rarr; Authorized domains:
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <code className="flex-1 px-2.5 py-1.5 bg-stone-100 border border-stone-300 rounded-lg font-mono text-[11px] break-all">
+                            {currentHostname}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => copyText(currentHostname, 'hostname')}
+                            className="px-2.5 py-1.5 bg-amber-300 hover:bg-amber-400 border border-stone-900 rounded-lg font-black text-stone-900 flex items-center gap-1 shrink-0 cursor-pointer"
+                          >
+                            {copiedKey === 'hostname' ? (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>คัดลอกแล้ว</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>คัดลอก</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="font-black text-stone-800">
+                          2. เพิ่มใน Google Cloud Console &rarr; APIs &amp; Services &rarr; Credentials &rarr; Authorized JavaScript origins:
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <code className="flex-1 px-2.5 py-1.5 bg-stone-100 border border-stone-300 rounded-lg font-mono text-[11px] break-all">
+                            {currentOrigin}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => copyText(currentOrigin, 'origin')}
+                            className="px-2.5 py-1.5 bg-amber-300 hover:bg-amber-400 border border-stone-900 rounded-lg font-black text-stone-900 flex items-center gap-1 shrink-0 cursor-pointer"
+                          >
+                            {copiedKey === 'origin' ? (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>คัดลอกแล้ว</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>คัดลอก</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <a
+                          href={`https://console.firebase.google.com/project/${appletConfig.projectId}/authentication/settings`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-900 text-white font-bold hover:bg-stone-800"
+                        >
+                          <span>เปิด Firebase Auth Settings</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                        <a
+                          href={`https://console.cloud.google.com/apis/credentials?project=${appletConfig.projectId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700"
+                        >
+                          <span>เปิด Google Cloud Credentials</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="mt-5 pt-4 border-t border-amber-200 text-center">
+          <div className="mt-5 pt-4 border-t border-amber-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-center">
             <div className="inline-flex items-center gap-1.5 text-xs sm:text-sm text-stone-600 font-bold">
               <DoodleShield className="w-4 h-4 shrink-0" />
-              <span>รองรับบัญชี @gmail.com และบัญชีธุรกิจ/การศึกษา</span>
+              <span>รองรับบัญชี @gmail.com และบัญชีสถานศึกษา</span>
             </div>
+
+            {onOpenCloudModal && (
+              <button
+                type="button"
+                onClick={onOpenCloudModal}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-100 hover:bg-sky-200 border-2 border-stone-900 text-stone-900 text-xs font-black shadow-[2px_2px_0px_#18181b] cursor-pointer transition-all"
+              >
+                <DoodleCloud className="w-4 h-4" />
+                <span>ตั้งค่า Firebase &amp; GitHub</span>
+              </button>
+            )}
           </div>
         </div>
 
         <div className="text-center mt-6 text-sm text-stone-600 font-bold">
-          TaskHub • ระบบสารสนเทศการเรียนรู้
+          TaskHub • ระบบสารสนเทศการเรียนรู้ (เชื่อมต่อฐานข้อมูล Cloud Firestore จริง)
         </div>
       </div>
     </div>

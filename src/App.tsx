@@ -46,6 +46,7 @@ import { LoginView } from './components/LoginView';
 import { CelebrationModal } from './components/CelebrationModal';
 import { GoogleSheetsModal } from './components/GoogleSheetsModal';
 import { ProfilePictureModal } from './components/ProfilePictureModal';
+import { CloudDeployModal } from './components/CloudDeployModal';
 import {
   getGoogleSheetsConfig,
   saveGoogleSheetsConfig,
@@ -75,6 +76,8 @@ import {
   subscribeToStudentRecordsFromFirestore,
   subscribeToExamScoresFromFirestore,
   subscribeToLessonsFromFirestore,
+  subscribeToUsersFromFirestore,
+  findExistingUserInFirestore,
   broadcastRealtimeUpdate,
   subscribeToBroadcastRealtime,
 } from './services/firebaseSync';
@@ -424,8 +427,14 @@ export default function App() {
     return Array.isArray(saved) ? saved : [];
   });
 
+  const [registeredUsers, setRegisteredUsers] = useState<UserProfile[]>(() => {
+    const saved = safeGetItem<UserProfile[]>('hw_box_registered_users', []);
+    return Array.isArray(saved) ? saved : [];
+  });
+
   const [isGoogleSheetsModalOpen, setIsGoogleSheetsModalOpen] = useState<boolean>(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
+  const [isCloudModalOpen, setIsCloudModalOpen] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('homework');
   const [celebration, setCelebration] = useState<{
     isOpen: boolean;
@@ -446,10 +455,10 @@ export default function App() {
         profileUnsubRef.current = null;
       }
 
-      if (!fbUser) {
-        // หากมีเซสชันผู้ใช้ที่เข้าสู่ระบบไว้แล้ว ให้คงสถานะไว้เสมอเพื่อการใช้งานต่อเนื่อง
-        const localLoggedIn = safeGetItem<string>('hw_box_logged_in', 'false') === 'true';
-        const localUser = safeGetItem<UserProfile | null>('hw_box_user', null);
+      const localLoggedIn = safeGetItem<string>('hw_box_logged_in', 'false') === 'true';
+      const localUser = safeGetItem<UserProfile | null>('hw_box_user', null);
+
+      if (!fbUser || !localLoggedIn) {
         if (localLoggedIn && localUser) {
           setUser(localUser);
           setIsAuthenticated(true);
@@ -464,9 +473,27 @@ export default function App() {
       const ref = doc(db, 'users', fbUser.uid);
       profileUnsubRef.current = onSnapshot(
         ref,
-        (snap) => {
+        async (snap) => {
           if (!snap.exists()) {
-            // ล็อกอิน Google ครั้งแรก -> ให้กรอกข้อมูลก่อน
+            // ตรวจสอบก่อนว่าอีเมลหรือชื่อนี้เคยสมัครไว้แล้วในเอกสารอื่นหรือไม่ (เช่น std-... หรือ tch-...)
+            const existing = await findExistingUserInFirestore({
+              uid: fbUser.uid,
+              email: fbUser.email ?? undefined,
+              name: fbUser.displayName ?? undefined,
+            });
+            if (existing) {
+              setUser(existing);
+              setPendingGoogleUser(null);
+              setIsAuthenticated(true);
+              setAuthReady(true);
+              safeSetItem('hw_box_saved_google_user', existing);
+              safeSetItem('hw_box_user', existing);
+              safeSetItem('hw_box_logged_in', 'true');
+              safeSetItem('hw_box_remember_login', 'true');
+              return;
+            }
+
+            // ล็อกอิน Google ครั้งแรกจริงๆ -> ให้กรอกข้อมูลก่อน
             setPendingGoogleUser({
               uid: fbUser.uid,
               email: fbUser.email ?? '',
@@ -714,9 +741,22 @@ export default function App() {
   useEffect(() => { safeSetItem('hw_box_exam_scores', examScores); }, [examScores]);
   useEffect(() => { safeSetItem('hw_box_student_records', studentRecords); }, [studentRecords]);
   useEffect(() => { safeSetItem('hw_box_reflection_topics', reflectionTopics); }, [reflectionTopics]);
+  useEffect(() => { safeSetItem('hw_box_registered_users', registeredUsers); }, [registeredUsers]);
 
   /* ---------- Real-time Firestore sync ---------- */
   useEffect(() => {
+    const unsubUsers = subscribeToUsersFromFirestore((firestoreUsers) => {
+      if (firestoreUsers && firestoreUsers.length > 0) {
+        setRegisteredUsers((prev) => {
+          const map = new Map<string, UserProfile>();
+          firestoreUsers.forEach((u) => map.set(u.id, u));
+          prev.forEach((u) => {
+            if (!map.has(u.id)) map.set(u.id, u);
+          });
+          return Array.from(map.values());
+        });
+      }
+    });
     const unsubTasks = subscribeToTasksFromFirestore((firestoreTasks) => {
       if (firestoreTasks && firestoreTasks.length > 0) {
         setAssignmentTasks((prev) => {
@@ -827,6 +867,7 @@ export default function App() {
     });
 
     return () => {
+      if (typeof unsubUsers === 'function') unsubUsers();
       if (typeof unsubTasks === 'function') unsubTasks();
       if (typeof unsubHws === 'function') unsubHws();
       if (typeof unsubEvals === 'function') unsubEvals();
@@ -1006,6 +1047,12 @@ export default function App() {
       safeSetItem('hw_box_saved_google_user', newUser);
       safeSetItem('hw_box_remember_login', 'true');
     }
+    setRegisteredUsers((prev) => {
+      const filtered = prev.filter((u) => u.id !== newUser.id);
+      const updated = [newUser, ...filtered];
+      safeSetItem('hw_box_registered_users', updated);
+      return updated;
+    });
     saveUserProfileToFirestore(newUser);
 
     if (newUser.role === 'student') {
@@ -1619,10 +1666,27 @@ export default function App() {
 
   if (!isAuthenticated) {
     return (
-      <LoginView
-        onLogin={handleLogin}
-        studentRecords={studentRecords}
-      />
+      <>
+        <LoginView
+          onLogin={handleLogin}
+          studentRecords={studentRecords}
+          registeredUsers={registeredUsers}
+          onOpenCloudModal={() => setIsCloudModalOpen(true)}
+        />
+        <CloudDeployModal
+          isOpen={isCloudModalOpen}
+          onClose={() => setIsCloudModalOpen(false)}
+          counts={{
+            tasks: assignmentTasks.length,
+            homeworks: homeworkList.length,
+            evaluations: evaluations.length,
+            reflections: reflectionTopics.length,
+            students: studentRecords.length,
+            exams: examScores.length,
+            lessons: lessons.length,
+          }}
+        />
+      </>
     );
   }
 
@@ -1634,6 +1698,7 @@ export default function App() {
           onLogout={handleLogout}
           onOpenGoogleSheets={user.role === 'teacher' ? () => setIsGoogleSheetsModalOpen(true) : undefined}
           onOpenProfileModal={() => setIsProfileModalOpen(true)}
+          onOpenCloudModal={() => setIsCloudModalOpen(true)}
         />
 
         <NavigationTabs
@@ -1764,6 +1829,20 @@ export default function App() {
         onClose={() => setIsProfileModalOpen(false)}
         user={user}
         onUpdateUser={handleUpdateUserProfile}
+      />
+
+      <CloudDeployModal
+        isOpen={isCloudModalOpen}
+        onClose={() => setIsCloudModalOpen(false)}
+        counts={{
+          tasks: visibleAssignmentTasks.length,
+          homeworks: visibleHomeworkList.length,
+          evaluations: visibleEvaluations.length,
+          reflections: visibleReflectionTopics.length,
+          students: visibleStudentRecords.length,
+          exams: visibleExamScores.length,
+          lessons: visibleLessons.length,
+        }}
       />
     </div>
   );

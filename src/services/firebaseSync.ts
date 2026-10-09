@@ -1,6 +1,8 @@
 import {
   collection,
   doc,
+  getDoc,
+  getDocs,
   setDoc,
   deleteDoc,
   onSnapshot,
@@ -252,6 +254,130 @@ export async function saveUserProfileToFirestore(user: UserProfile): Promise<voi
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${USERS_COLLECTION}/${user.id}`);
   }
+}
+
+/**
+ * Real-time listener for registered users in Firestore
+ */
+export function subscribeToUsersFromFirestore(onUpdate: (users: UserProfile[]) => void) {
+  try {
+    const q = query(collection(db, USERS_COLLECTION));
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const users: UserProfile[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as Record<string, any>;
+          if (data && (data.name || data.fullName) && data.role) {
+            users.push({
+              ...(data as UserProfile),
+              id: data.id || docSnap.id,
+              name: data.name || data.fullName,
+              googleEmail: data.googleEmail || data.email || data.usernameOrEmail,
+            });
+          }
+        });
+        const hasRemovals = snapshot.docChanges().some((c) => c.type === 'removed');
+        if (users.length > 0 || hasRemovals) {
+          onUpdate(users);
+        }
+      },
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, USERS_COLLECTION);
+      }
+    );
+  } catch (e) {
+    console.warn('Firestore subscribe users error:', e);
+    return () => {};
+  }
+}
+
+/**
+ * Normalize name or email for consistent account matching
+ */
+export function normalizeIdentity(val?: string | null): string {
+  if (!val) return '';
+  return val.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Find an existing registered user in Firestore (by uid, email, or full name)
+ * Ensures one role per account (deduplicating any legacy duplicate documents).
+ */
+export async function findExistingUserInFirestore(criteria: {
+  uid?: string;
+  email?: string;
+  name?: string;
+  localUsers?: UserProfile[];
+}): Promise<UserProfile | null> {
+  const normEmail = normalizeIdentity(criteria.email);
+  const normName = normalizeIdentity(criteria.name);
+  const normUid = criteria.uid?.trim();
+
+  const matchesCriteria = (u: Record<string, any>, docId?: string): boolean => {
+    const uId = String(u.id || docId || '').trim();
+    const uEmail = normalizeIdentity(u.googleEmail || u.email || u.usernameOrEmail);
+    const uName = normalizeIdentity(u.name || u.fullName);
+
+    // ข้ามข้อมูลตัวอย่างเริ่มต้น
+    if (uId === 'std-01' && uName === normalizeIdentity('เด็กชายสมชาย สายวิทย์') && !uEmail) {
+      return false;
+    }
+
+    if (normUid && uId === normUid) return true;
+    if (normEmail && uEmail && uEmail === normEmail) return true;
+    if (!normEmail && normName && uName && uName === normName) return true;
+    return false;
+  };
+
+  try {
+    const snap = await getDocs(collection(db, USERS_COLLECTION));
+    const matchedDocs: { docId: string; data: Record<string, any> }[] = [];
+
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data() as Record<string, any>;
+      if (matchesCriteria(data, docSnap.id)) {
+        matchedDocs.push({ docId: docSnap.id, data });
+      }
+    }
+
+    if (matchedDocs.length > 0) {
+      // เรียงตามเวลาที่อัปเดตล่าสุด (updatedAt) เพื่อให้ยึดบทบาทที่บัญชีนี้ใช้งานจริงเป็นหลัก
+      matchedDocs.sort((a, b) => {
+        const timeA = a.data.updatedAt ? String(a.data.updatedAt) : '';
+        const timeB = b.data.updatedAt ? String(b.data.updatedAt) : '';
+        return timeB.localeCompare(timeA);
+      });
+
+      const primary = matchedDocs[0];
+
+      // ลบเอกสารซ้ำซ้อนที่อาจค้างจากการทดสอบก่อนหน้า เพื่อให้ 1 อีเมลมีได้เพียง 1 บทบาทเท่านั้น
+      if (matchedDocs.length > 1) {
+        for (let i = 1; i < matchedDocs.length; i++) {
+          const dup = matchedDocs[i];
+          if (dup.docId !== primary.docId) {
+            deleteDoc(doc(db, USERS_COLLECTION, dup.docId)).catch(() => {});
+          }
+        }
+      }
+
+      return {
+        ...(primary.data as UserProfile),
+        id: primary.data.id || primary.docId,
+        name: primary.data.name || primary.data.fullName || '',
+        googleEmail: primary.data.googleEmail || primary.data.email || primary.data.usernameOrEmail,
+      };
+    }
+  } catch (e) {
+    console.warn('Firestore user lookup fallback to local:', e);
+  }
+
+  if (criteria.localUsers && criteria.localUsers.length > 0) {
+    const foundLocal = criteria.localUsers.find((u) => matchesCriteria(u, u.id));
+    if (foundLocal) return foundLocal;
+  }
+
+  return null;
 }
 
 /**

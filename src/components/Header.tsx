@@ -1,7 +1,7 @@
 import React from 'react';
 import { UserProfile, UserRole } from '../types';
 import { AvatarDisplay } from './DoodleAvatars';
-import { DoodleStar, DoodleGradCap, DoodleSchool } from './DoodleIcons';
+import { DoodleStar, DoodleGradCap, DoodleSchool, DoodleCloud } from './DoodleIcons';
 import { GoogleIcon } from './GoogleIcon';
 import { GoogleSheetsIcon } from './GoogleSheetsModal';
 import { getGoogleSheetsConfig } from '../services/googleSheetsService';
@@ -12,6 +12,7 @@ interface HeaderProps {
   onLogout: () => void;
   onOpenGoogleSheets?: () => void;
   onOpenProfileModal?: () => void;
+  onOpenCloudModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -19,6 +20,7 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   onOpenGoogleSheets,
   onOpenProfileModal,
+  onOpenCloudModal,
 }) => {
   return (
     <header className="w-full bg-white border-2 border-amber-300 rounded-2xl p-4 md:p-5 mb-6 shadow-sm relative overflow-hidden">
@@ -112,6 +114,19 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Firebase & GitHub Cloud Hub Button */}
+          {onOpenCloudModal && (
+            <button
+              onClick={onOpenCloudModal}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-sky-50 hover:bg-sky-100 text-stone-900 text-base font-bold rounded-xl border border-sky-300 cursor-pointer shadow-xs relative transition-colors"
+              title="ศูนย์เชื่อมต่อใช้งานจริง Firebase & GitHub"
+            >
+              <DoodleCloud className="w-5 h-5" />
+              <span className="hidden sm:inline font-bold">Cloud &amp; GitHub</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-white absolute -top-1 -right-1" title="เชื่อมต่อ Cloud Firestore พร้อมใช้งาน" />
+            </button>
+          )}
 
           {/* Google Sheets Sync Hub Button (Teachers Only) - Flat Style */}
           {user.role === 'teacher' && onOpenGoogleSheets && (

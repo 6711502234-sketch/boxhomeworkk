@@ -322,3 +322,97 @@ export const DoodleTeacher: React.FC<DoodleIconProps> = ({ className = 'w-8 h-8'
     <path d="M28 41 Q32 45 36 41" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
   </svg>
 );
+
+/** ก้อนเมฆ Cloud วาดมือ (DoodleCloud) */
+export const DoodleCloud: React.FC<DoodleIconProps> = ({ className = 'w-5 h-5', size }) => (
+  <svg
+    viewBox="0 0 64 64"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    style={size ? { width: size, height: size } : undefined}
+  >
+    <path
+      d="M20 46 H46 C53 46, 58 41, 58 34 C58 28, 53 23, 47 23 C45 14, 37 10, 29 12 C21 14, 17 21, 17 26 C11 27, 6 32, 6 38 C6 43, 12 46, 20 46 Z"
+      fill="#BAE6FD"
+      stroke="#18181B"
+      strokeWidth="3.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <circle cx="27" cy="32" r="2" fill="#18181B" />
+    <circle cx="37" cy="32" r="2" fill="#18181B" />
+    <path d="M29 36 Q32 39 35 36" stroke="#18181B" strokeWidth="2.2" strokeLinecap="round" />
+  </svg>
+);
+
+/** จรวดอวกาศวาดมือ (DoodleRocket) */
+export const DoodleRocket: React.FC<DoodleIconProps> = ({ className = 'w-5 h-5', size }) => (
+  <svg
+    viewBox="0 0 64 64"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    style={size ? { width: size, height: size } : undefined}
+  >
+    <path
+      d="M32 8 C42 18, 44 32, 42 44 H22 C20 32, 22 18, 32 8 Z"
+      fill="#F87171"
+      stroke="#18181B"
+      strokeWidth="3.2"
+      strokeLinejoin="round"
+    />
+    <path d="M22 36 L12 46 H22 Z" fill="#FACC15" stroke="#18181B" strokeWidth="3" strokeLinejoin="round" />
+    <path d="M42 36 L52 46 H42 Z" fill="#FACC15" stroke="#18181B" strokeWidth="3" strokeLinejoin="round" />
+    <circle cx="32" cy="26" r="6" fill="#E0F2FE" stroke="#18181B" strokeWidth="3" />
+    <path d="M26 44 L32 56 L38 44 Z" fill="#FB923C" stroke="#18181B" strokeWidth="2.8" strokeLinejoin="round" />
+  </svg>
+);
+
+/** ปุ่มกากบาทปิดวาดมือ (DoodleClose) */
+export const DoodleClose: React.FC<DoodleIconProps> = ({ className = 'w-5 h-5', size }) => (
+  <svg
+    viewBox="0 0 64 64"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    style={size ? { width: size, height: size } : undefined}
+  >
+    <circle cx="32" cy="32" r="24" fill="#FECDD3" stroke="#18181B" strokeWidth="3.2" />
+    <path d="M23 23 L41 41 M41 23 L23 41" stroke="#18181B" strokeWidth="3.8" strokeLinecap="round" />
+  </svg>
+);
+
+/** โซ่ลิงก์เชื่อมต่อวาดมือ (DoodleLink) */
+export const DoodleLink: React.FC<DoodleIconProps> = ({ className = 'w-5 h-5', size }) => (
+  <svg
+    viewBox="0 0 64 64"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    style={size ? { width: size, height: size } : undefined}
+  >
+    <rect
+      x="10"
+      y="24"
+      width="24"
+      height="16"
+      rx="8"
+      fill="#FDE68A"
+      stroke="#18181B"
+      strokeWidth="3.2"
+    />
+    <rect
+      x="30"
+      y="24"
+      width="24"
+      height="16"
+      rx="8"
+      fill="#A7F3D0"
+      stroke="#18181B"
+      strokeWidth="3.2"
+    />
+    <path d="M24 32 H40" stroke="#18181B" strokeWidth="3.8" strokeLinecap="round" />
+  </svg>
+);
+
