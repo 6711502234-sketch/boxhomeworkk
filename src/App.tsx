@@ -1202,7 +1202,11 @@ export default function App() {
     );
   }
 
-  if (!isAuthenticated) {
+  const isAuthBridgeMode =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('google_auth_bridge') === '1';
+
+  if (!isAuthenticated || isAuthBridgeMode) {
     return (
       <>
         <LoginView

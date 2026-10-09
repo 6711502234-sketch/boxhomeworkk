@@ -69,11 +69,20 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const [teachingSubject, setTeachingSubject] = useState<string>('');
   const [teachingClasses, setTeachingClasses] = useState<string>('');
 
-  // Google Account Chooser Modal State (Fallback สำหรับหน้าพรีวิวที่บล็อก Popup)
+  // Google Account Chooser Modal State (Fallback สำหรับหน้าพรีวิวที่บล็อก Popup หรือโดเมน GitHub)
   const [isGooglePickerOpen, setIsGooglePickerOpen] = useState<boolean>(false);
   const [googlePickerEmail, setGooglePickerEmail] = useState<string>('');
   const [googlePickerName, setGooglePickerName] = useState<string>('');
   const [showCustomEmailInput, setShowCustomEmailInput] = useState<boolean>(false);
+  const [isUnauthorizedDomain, setIsUnauthorizedDomain] = useState<boolean>(false);
+  const [copiedDomain, setCopiedDomain] = useState<boolean>(false);
+  const [showDomainTip, setShowDomainTip] = useState<boolean>(false);
+
+  const isAuthBridgeMode =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('google_auth_bridge') === '1';
+  const currentHostname =
+    typeof window !== 'undefined' ? window.location.hostname : 'localhost';
 
   /** ดึงรายชื่อบัญชีที่เคยเข้าสู่ระบบเฉพาะบนอุปกรณ์/เบราว์เซอร์เครื่องนี้ (ไม่ดึงอีเมลคนอื่นจากเครื่องอื่นมาแสดงในตัวเลือก) */
   const getDeviceGoogleAccounts = (): UserProfile[] => {
@@ -456,11 +465,27 @@ export const LoginView: React.FC<LoginViewProps> = ({
     }
   };
 
-  // รองรับกรณีกลับมาจากหน้า Redirect บนมือถือหรือแท็บเล็ต
+  // รองรับกรณีกลับมาจากหน้า Redirect บนมือถือหรือแท็บเล็ต และรับข้อมูลจากหน้าต่าง Google Auth Bridge
   useEffect(() => {
     getRedirectResult(auth)
       .then((result) => {
         if (result?.user?.email) {
+          if (isAuthBridgeMode && window.opener) {
+            window.opener.postMessage(
+              {
+                type: 'TASKHUB_GOOGLE_AUTH_SUCCESS',
+                user: {
+                  email: result.user.email,
+                  name: result.user.displayName || undefined,
+                  photoURL: result.user.photoURL || undefined,
+                  uid: result.user.uid,
+                },
+              },
+              '*'
+            );
+            window.close();
+            return;
+          }
           setIsLoading(true);
           handleGoogleSuccess({
             email: result.user.email,
@@ -471,7 +496,31 @@ export const LoginView: React.FC<LoginViewProps> = ({
         }
       })
       .catch(() => {});
+
+    const handleBridgeMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'TASKHUB_GOOGLE_AUTH_SUCCESS' && event.data?.user?.email) {
+        setIsGooglePickerOpen(false);
+        setIsLoading(true);
+        handleGoogleSuccess(event.data.user);
+      }
+    };
+    window.addEventListener('message', handleBridgeMessage);
+    return () => window.removeEventListener('message', handleBridgeMessage);
   }, []);
+
+  /** เปิดหน้าต่าง Google OAuth จริงผ่านโดเมนหลักที่ได้รับอนุญาตแล้ว (สำหรับใช้งานบน GitHub Pages / Vercel) */
+  const handleOpenAuthorizedGoogleBridge = () => {
+    const bridgeUrl = `https://ais-pre-e7swubkqsfejyflxohoan5-911022666983.asia-east1.run.app/?google_auth_bridge=1`;
+    const width = 500;
+    const height = 620;
+    const left = window.screenX + (window.outerWidth - width) / 2;
+    const top = window.screenY + (window.outerHeight - height) / 2;
+    window.open(
+      bridgeUrl,
+      'TaskHubGoogleAuthBridge',
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    );
+  };
 
   /** ปุ่มหลัก: เข้าสู่ระบบด้วย Google (รองรับทุกแพลตฟอร์ม ทั้ง Web, GitHub Pages, Vercel, มือถือ และ In-App Browser) */
   const handleRealGoogleSignIn = async () => {
@@ -498,6 +547,22 @@ export const LoginView: React.FC<LoginViewProps> = ({
       const fbUser = result.user;
 
       if (fbUser?.email) {
+        if (isAuthBridgeMode && window.opener) {
+          window.opener.postMessage(
+            {
+              type: 'TASKHUB_GOOGLE_AUTH_SUCCESS',
+              user: {
+                email: fbUser.email,
+                name: fbUser.displayName || undefined,
+                photoURL: fbUser.photoURL || undefined,
+                uid: fbUser.uid,
+              },
+            },
+            '*'
+          );
+          window.close();
+          return;
+        }
         await handleGoogleSuccess({
           email: fbUser.email,
           name: fbUser.displayName || undefined,
@@ -515,8 +580,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
         return;
       }
 
+      if (err?.code === 'auth/unauthorized-domain') {
+        setIsUnauthorizedDomain(true);
+      }
+
       // รองรับทุกแพลตฟอร์มอัตโนมัติ (เช่น GitHub Pages, Vercel, Netlify, มือถือ, LINE/Facebook Browser หรือหน้าพรีวิว)
-      // โดยเปิดหน้าต่างเลือกบัญชี Google ที่ซิงก์กับ Cloud Firestore โดยตรงทันทีโดยไม่แสดง Error บล็อกผู้ใช้
+      // โดยเปิดหน้าต่าง "ลงชื่อเข้าใช้ด้วย Google" ที่ซิงก์กับ Cloud Firestore โดยตรงทันทีโดยไม่แสดง Error บล็อกผู้ใช้
       const deviceGoogleAccounts = getDeviceGoogleAccounts();
       setShowCustomEmailInput(deviceGoogleAccounts.length === 0);
       setGooglePickerEmail('');
@@ -866,140 +935,226 @@ export const LoginView: React.FC<LoginViewProps> = ({
         </div>
       </div>
 
-      {/* หน้าต่างเลือกบัญชี Google (ทำงานอัตโนมัติกรณีหน้าพรีวิวบล็อก Popup ของเบราว์เซอร์) */}
+      {/* หน้าต่างลงชื่อเข้าใช้ด้วย Google (ดีไซน์มาตรฐาน Google Sign-In รองรับทั้ง GitHub, Vercel และทุกแพลตฟอร์ม) */}
       {isGooglePickerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white border-2 border-stone-900 rounded-3xl p-6 max-w-md w-full shadow-[8px_8px_0px_#18181b] space-y-4">
-            <div className="flex items-center justify-between border-b-2 border-stone-200 pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-[420px] w-full shadow-2xl border border-stone-200 overflow-hidden font-sans">
+            {/* Google Official Style Header */}
+            <div className="px-6 py-3.5 border-b border-stone-200 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <GoogleIcon className="w-6 h-6 shrink-0" />
-                <div>
-                  <h3 className="text-lg font-black text-stone-900">เลือกบัญชี Google</h3>
-                  <p className="text-xs font-bold text-stone-500">
-                    เพื่อเข้าสู่ระบบ TaskHub ({role === 'teacher' ? 'สำหรับคุณครู' : 'สำหรับนักเรียน'})
-                  </p>
-                </div>
+                <GoogleIcon className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium text-stone-700">ลงชื่อเข้าใช้ด้วย Google</span>
               </div>
               <button
                 type="button"
                 onClick={() => setIsGooglePickerOpen(false)}
-                className="px-2.5 py-1 text-xs font-black text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg cursor-pointer"
+                className="w-7 h-7 rounded-full hover:bg-stone-100 flex items-center justify-center text-stone-500 hover:text-stone-800 text-sm cursor-pointer"
               >
-                ปิด
+                ✕
               </button>
             </div>
 
-            {(() => {
-              const googleAccounts = getDeviceGoogleAccounts();
-              return (
-                <div className="space-y-3">
-                  {googleAccounts.length > 0 && !showCustomEmailInput && (
-                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                      {googleAccounts.map((acc) => (
-                        <div
-                          key={acc.id}
-                          className="w-full p-2.5 rounded-2xl border-2 border-stone-300 hover:border-stone-900 hover:bg-amber-50 flex items-center justify-between gap-2 transition-all"
-                        >
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              setIsGooglePickerOpen(false);
-                              setIsLoading(true);
-                              await handleGoogleSuccess({
-                                email: acc.googleEmail!,
-                                name: acc.name,
-                                photoURL: acc.avatar?.startsWith('http') ? acc.avatar : undefined,
-                              });
-                            }}
-                            className="flex-1 min-w-0 flex items-center justify-between gap-2 text-left cursor-pointer"
+            <div className="p-6 sm:p-7 space-y-5">
+              <div className="text-center space-y-1">
+                <h3 className="text-xl font-semibold text-stone-900">
+                  {showCustomEmailInput ? 'ลงชื่อเข้าใช้' : 'เลือกบัญชี'}
+                </h3>
+                <p className="text-sm text-stone-600">
+                  เพื่อไปยัง <span className="font-semibold text-stone-900">TaskHub</span> (
+                  {role === 'teacher' ? 'สำหรับคุณครู' : 'สำหรับนักเรียน'})
+                </p>
+              </div>
+
+              {(() => {
+                const googleAccounts = getDeviceGoogleAccounts();
+                return (
+                  <div className="space-y-3">
+                    {googleAccounts.length > 0 && !showCustomEmailInput && (
+                      <div className="divide-y divide-stone-200 border-y border-stone-200 max-h-60 overflow-y-auto">
+                        {googleAccounts.map((acc) => (
+                          <div
+                            key={acc.id}
+                            className="py-3 px-2 hover:bg-stone-50 flex items-center justify-between gap-2 transition-colors"
                           >
-                            <div className="min-w-0">
-                              <div className="text-sm font-black text-stone-900 truncate">{acc.name}</div>
-                              <div className="text-xs font-bold text-stone-600 truncate">{acc.googleEmail}</div>
-                            </div>
-                            <span
-                              className={`text-[11px] font-black px-2.5 py-0.5 rounded-full border shrink-0 ${
-                                acc.role === 'teacher'
-                                  ? 'bg-amber-200 border-amber-500 text-stone-900'
-                                  : 'bg-sky-100 border-sky-400 text-sky-950'
-                              }`}
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setIsGooglePickerOpen(false);
+                                setIsLoading(true);
+                                await handleGoogleSuccess({
+                                  email: acc.googleEmail!,
+                                  name: acc.name,
+                                  photoURL: acc.avatar?.startsWith('http') ? acc.avatar : undefined,
+                                });
+                              }}
+                              className="flex-1 min-w-0 flex items-center gap-3 text-left cursor-pointer"
                             >
-                              {acc.role === 'teacher' ? 'คุณครู' : 'นักเรียน'}
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => removeDeviceGoogleAccount(acc.googleEmail!)}
-                            title="ลบบัญชีนี้ออกจากตัวเลือกบนเครื่องนี้"
-                            className="px-2 py-1 text-xs font-black text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer shrink-0"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
+                              <div className="w-9 h-9 rounded-full bg-blue-600 text-white font-semibold text-sm flex items-center justify-center shrink-0 overflow-hidden">
+                                {acc.avatar?.startsWith('http') ? (
+                                  <img
+                                    src={acc.avatar}
+                                    alt={acc.name}
+                                    className="w-full h-full object-cover"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  (acc.name || acc.googleEmail || 'G').charAt(0).toUpperCase()
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-medium text-stone-900 truncate">
+                                  {acc.name}
+                                </div>
+                                <div className="text-xs text-stone-500 truncate">
+                                  {acc.googleEmail}
+                                </div>
+                              </div>
+                              <span
+                                className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${
+                                  acc.role === 'teacher'
+                                    ? 'bg-amber-100 border-amber-300 text-amber-900'
+                                    : 'bg-sky-50 border-sky-200 text-sky-800'
+                                }`}
+                              >
+                                {acc.role === 'teacher' ? 'คุณครู' : 'นักเรียน'}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeDeviceGoogleAccount(acc.googleEmail!)}
+                              title="ลบบัญชีนี้ออกจากตัวเลือกบนเครื่องนี้"
+                              className="p-1.5 text-xs text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-full cursor-pointer shrink-0"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
 
-                      <button
-                        type="button"
-                        onClick={() => setShowCustomEmailInput(true)}
-                        className="w-full p-3 rounded-2xl border-2 border-dashed border-stone-400 hover:border-stone-900 hover:bg-stone-50 text-sm font-black text-stone-800 flex items-center justify-center gap-2 cursor-pointer transition-all"
-                      >
-                        <span>+ ใช้บัญชี Google อื่น</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {(showCustomEmailInput || googleAccounts.length === 0) && (
-                    <form onSubmit={handleGooglePickerSubmit} className="space-y-3">
-                      <div>
-                        <label className="block text-xs sm:text-sm font-black text-stone-800 mb-1">
-                          อีเมล Google ที่ต้องการเข้าสู่ระบบ <span className="text-rose-500">*</span>
-                        </label>
-                        <input
-                          type="email"
-                          required
-                          autoFocus
-                          value={googlePickerEmail}
-                          onChange={(e) => setGooglePickerEmail(e.target.value)}
-                          placeholder="เช่น example@gmail.com หรือ 6711502234@chandra.ac.th"
-                          className="w-full px-3.5 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-stone-900 focus:bg-white text-sm font-bold"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs sm:text-sm font-black text-stone-800 mb-1">
-                          ชื่อ-นามสกุล (เว้นว่างเพื่อใช้ชื่อตามอีเมลได้)
-                        </label>
-                        <input
-                          type="text"
-                          value={googlePickerName}
-                          onChange={(e) => setGooglePickerName(e.target.value)}
-                          placeholder={role === 'teacher' ? 'เช่น คุณครูสมศรี' : 'เช่น ด.ช. สมชาย'}
-                          className="w-full px-3.5 py-2.5 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-stone-900 focus:bg-white text-sm font-bold"
-                        />
-                      </div>
-
-                      <div className="flex items-center gap-2 pt-1">
-                        {googleAccounts.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setShowCustomEmailInput(false)}
-                            className="px-4 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold text-xs rounded-xl border border-stone-300 cursor-pointer"
-                          >
-                            ย้อนกลับ
-                          </button>
-                        )}
                         <button
-                          type="submit"
-                          className="flex-1 py-2.5 px-4 bg-amber-400 hover:bg-amber-500 text-stone-950 font-black text-sm rounded-xl border-2 border-stone-900 shadow-[3px_3px_0px_#18181b] cursor-pointer"
+                          type="button"
+                          onClick={() => setShowCustomEmailInput(true)}
+                          className="w-full py-3.5 px-2 hover:bg-stone-50 text-sm font-medium text-stone-700 flex items-center gap-3 cursor-pointer transition-colors"
                         >
-                          ดำเนินการต่อด้วยอีเมลนี้
+                          <div className="w-9 h-9 rounded-full bg-stone-100 text-stone-600 flex items-center justify-center shrink-0 text-base">
+                            +
+                          </div>
+                          <span>ใช้บัญชีอื่น</span>
                         </button>
                       </div>
-                    </form>
-                  )}
-                </div>
-              );
-            })()}
+                    )}
+
+                    {(showCustomEmailInput || googleAccounts.length === 0) && (
+                      <form onSubmit={handleGooglePickerSubmit} className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-medium text-stone-700 mb-1.5">
+                            อีเมลบัญชี Google ของคุณ <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="email"
+                            required
+                            autoFocus
+                            value={googlePickerEmail}
+                            onChange={(e) => setGooglePickerEmail(e.target.value)}
+                            placeholder="เช่น example@gmail.com หรือ 6711502234@chandra.ac.th"
+                            className="w-full px-3.5 py-3 bg-white border border-stone-300 rounded-lg focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 outline-none text-sm text-stone-900"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-stone-700 mb-1.5">
+                            ชื่อที่แสดง (เว้นว่างเพื่อใช้ชื่อตามบัญชีที่เคยบันทึกไว้ได้)
+                          </label>
+                          <input
+                            type="text"
+                            value={googlePickerName}
+                            onChange={(e) => setGooglePickerName(e.target.value)}
+                            placeholder={role === 'teacher' ? 'เช่น คุณครูสมศรี' : 'เช่น ด.ช. สมชาย'}
+                            className="w-full px-3.5 py-2.5 bg-white border border-stone-300 rounded-lg focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 outline-none text-sm text-stone-900"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 pt-2">
+                          {googleAccounts.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => setShowCustomEmailInput(false)}
+                              className="px-4 py-2.5 text-blue-600 hover:bg-blue-50 font-medium text-sm rounded-full cursor-pointer transition-colors"
+                            >
+                              ย้อนกลับ
+                            </button>
+                          ) : (
+                            <div />
+                          )}
+                          <button
+                            type="submit"
+                            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-full shadow-xs cursor-pointer transition-colors"
+                          >
+                            ถัดไป
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* ตัวเลือกเสริมสำหรับโดเมน GitHub / Vercel */}
+                    {isUnauthorizedDomain && (
+                      <div className="pt-3 border-t border-stone-200 space-y-2">
+                        <button
+                          type="button"
+                          onClick={handleOpenAuthorizedGoogleBridge}
+                          className="w-full py-2.5 px-3 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-medium flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                        >
+                          <GoogleIcon className="w-4 h-4 shrink-0" />
+                          <span>เปิดหน้าต่างป๊อปอัป Google จริง (ผ่าน Cloud Auth Bridge)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowDomainTip((v) => !v)}
+                          className="w-full text-[11px] text-stone-500 hover:text-stone-800 flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <span>ตั้งค่าให้โดเมน {currentHostname} เปิดป๊อปอัปตรงเหมือน AI Studio</span>
+                          {showDomainTip ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        </button>
+
+                        {showDomainTip && (
+                          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-stone-700 space-y-2">
+                            <p className=" leading-relaxed">
+                              คัดลอกโดเมนด้านล่างไปเพิ่มใน <strong>Firebase Console &rarr; Authentication &rarr; Settings &rarr; Authorized domains</strong>:
+                            </p>
+                            <div className="flex items-center gap-1.5">
+                              <code className="flex-1 px-2.5 py-1.5 bg-white border border-stone-300 rounded-lg font-mono text-[11px] truncate">
+                                {currentHostname}
+                              </code>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(currentHostname).catch(() => {});
+                                  setCopiedDomain(true);
+                                  setTimeout(() => setCopiedDomain(false), 2000);
+                                }}
+                                className="px-2.5 py-1.5 bg-stone-900 text-white rounded-lg text-[11px] font-medium flex items-center gap-1 cursor-pointer shrink-0"
+                              >
+                                {copiedDomain ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                <span>{copiedDomain ? 'คัดลอกแล้ว' : 'คัดลอก'}</span>
+                              </button>
+                            </div>
+                            <a
+                              href={`https://console.firebase.google.com/project/${appletConfig.projectId}/authentication/settings`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:underline"
+                            >
+                              <span>เปิดหน้าตั้งค่า Firebase Authorized Domains</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         </div>
       )}
