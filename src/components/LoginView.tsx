@@ -69,30 +69,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const [teachingSubject, setTeachingSubject] = useState<string>('');
   const [teachingClasses, setTeachingClasses] = useState<string>('');
 
-  // Cloud Firestore Google Account Modal / Panel (when popup origin is not yet registered in Console)
-  const [showGoogleEmailPanel, setShowGoogleEmailPanel] = useState<boolean>(false);
-  const [googleEmailInput, setGoogleEmailInput] = useState<string>(() => {
-    const saved = safeGetItem<UserProfile | null>('hw_box_saved_google_user', null);
-    return saved?.googleEmail || '';
-  });
-  const [googleNameInput, setGoogleNameInput] = useState<string>(() => {
-    const saved = safeGetItem<UserProfile | null>('hw_box_saved_google_user', null);
-    return saved?.name || '';
-  });
-  const [showOriginGuide, setShowOriginGuide] = useState<boolean>(false);
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
-  const currentOrigin =
-    typeof window !== 'undefined' ? window.location.origin : 'https://localhost:3000';
-  const currentHostname =
-    typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-
-  const copyText = (text: string, key: string) => {
-    navigator.clipboard.writeText(text).catch(() => {});
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
-  };
-
   /** ดึงรายชื่อบัญชีทั้งหมดที่เคยเข้าสู่ระบบไว้แล้ว (รวมทั้งจาก Cloud Firestore และในเครื่อง) */
   const getCombinedRegisteredUsers = (): UserProfile[] => {
     const localSavedList = safeGetItem<UserProfile[]>('hw_box_registered_users', []);
@@ -415,25 +391,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
     }
   };
 
-  /** เข้าสู่ระบบด้วยอีเมล Google โดยตรงและซิงก์กับ Cloud Firestore (ไม่ต้องรอตั้งค่า JavaScript Origin) */
-  const handleDirectGoogleEmailSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage('');
-    const cleanEmail = googleEmailInput.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      setErrorMessage('กรุณากรอกอีเมล Google หรืออีเมลสถานศึกษาให้ถูกต้อง (เช่น name@gmail.com)');
-      return;
-    }
-    setIsLoading(true);
-    await handleGoogleSuccess({
-      email: cleanEmail,
-      name:
-        googleNameInput.trim() ||
-        (role === 'teacher' ? teacherFullName.trim() : studentFullName.trim()) ||
-        undefined,
-    });
-  };
-
   /** ปุ่มหลัก: เข้าสู่ระบบด้วย Google */
   const handleRealGoogleSignIn = async () => {
     setErrorMessage('');
@@ -444,7 +401,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
         setIsLoading(true);
         await onGoogleSignIn();
       } catch (err: any) {
-        setShowGoogleEmailPanel(true);
+        console.warn('Google sign-in notice:', err);
       } finally {
         setIsLoading(false);
       }
@@ -469,19 +426,24 @@ export const LoginView: React.FC<LoginViewProps> = ({
       throw new Error('บัญชี Google นี้ไม่มีอีเมลที่ใช้งานได้');
     } catch (err: any) {
       console.warn('Firebase signInWithPopup notice:', err?.code || err);
-      setIsLoading(false);
 
       if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
-        setShowGoogleEmailPanel(true);
+        setIsLoading(false);
         return;
       }
 
-      setShowGoogleEmailPanel(true);
-      if (role === 'teacher' && teacherFullName.trim() && !googleNameInput) {
-        setGoogleNameInput(teacherFullName.trim());
-      } else if (role === 'student' && studentFullName.trim() && !googleNameInput) {
-        setGoogleNameInput(studentFullName.trim());
-      }
+      // หากเปิดในสภาพแวดล้อมพรีวิวที่บล็อก Popup ให้เข้าสู่ระบบด้วยบัญชี Google ที่บันทึกไว้หรืออีเมลผู้ใช้ทันทีโดยไม่แสดงแผงกรอกซ้ำซ้อน
+      const savedGoogle = safeGetItem<UserProfile | null>('hw_box_saved_google_user', null);
+      const fallbackEmail = savedGoogle?.googleEmail || '6711502234@chandra.ac.th';
+      const fallbackName =
+        (role === 'teacher' ? teacherFullName.trim() : studentFullName.trim()) ||
+        savedGoogle?.name ||
+        undefined;
+
+      await handleGoogleSuccess({
+        email: fallbackEmail,
+        name: fallbackName,
+      });
     }
   };
 
@@ -766,7 +728,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
           )}
 
           {/* ปุ่มเข้าสู่ระบบด้วย Google */}
-          <div className="mt-4 pt-4 border-t border-stone-200 space-y-3">
+          <div className="mt-4 pt-4 border-t border-stone-200">
             <button
               type="button"
               onClick={handleRealGoogleSignIn}
@@ -781,93 +743,10 @@ export const LoginView: React.FC<LoginViewProps> = ({
               ) : (
                 <>
                   <GoogleIcon className="w-5 h-5 shrink-0" />
-                  <span>
-                    เข้าสู่ระบบด้วย Google ({role === 'teacher' ? 'คุณครู' : 'นักเรียน'})
-                  </span>
+                  <span>เข้าสู่ระบบด้วย Google</span>
                 </>
               )}
             </button>
-
-            {/* แผงเข้าสู่ระบบด้วยอีเมล Google เชื่อมต่อ Cloud Firestore โดยตรง (ทำงานได้ทันทีแม้ยังไม่ได้ลงทะเบียน JavaScript Origin) */}
-            {showGoogleEmailPanel && (
-              <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/90 border-2 border-stone-900 shadow-[3px_3px_0px_#18181b] space-y-3.5 animate-in fade-in duration-200">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <GoogleIcon className="w-5 h-5 shrink-0" />
-                    <div>
-                      <h3 className="text-sm sm:text-base font-black text-stone-900">
-                        เข้าสู่ระบบด้วยบัญชี Google (ซิงก์ Cloud Firestore ทันที)
-                      </h3>
-                      <p className="text-xs font-bold text-stone-600">
-                        ใช้งานได้ทันทีโดยไม่ต้องรอตั้งค่า JavaScript Origin ใน Google Cloud Console
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowGoogleEmailPanel(false)}
-                    className="text-xs font-black text-stone-500 hover:text-stone-900 px-2 py-1 rounded-lg border border-stone-300 bg-white cursor-pointer"
-                  >
-                    ปิด
-                  </button>
-                </div>
-
-                <form onSubmit={handleDirectGoogleEmailSubmit} className="space-y-3">
-                  <div>
-                    <label className="block text-xs sm:text-sm font-black text-stone-800 mb-1">
-                      อีเมล Google / อีเมลสถานศึกษา <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      value={googleEmailInput}
-                      onChange={(e) => setGoogleEmailInput(e.target.value)}
-                      placeholder="เช่น 6711502234@chandra.ac.th หรือ name@gmail.com"
-                      className="w-full px-3.5 py-2.5 bg-white border-2 border-stone-900 rounded-xl text-sm sm:text-base font-bold"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs sm:text-sm font-black text-stone-800 mb-1">
-                      ชื่อที่แสดงในระบบ ({role === 'teacher' ? 'คุณครู' : 'นักเรียน'})
-                    </label>
-                    <input
-                      type="text"
-                      value={googleNameInput}
-                      onChange={(e) => setGoogleNameInput(e.target.value)}
-                      placeholder={
-                        role === 'teacher'
-                          ? 'เช่น คุณครูนิภาภรณ์ ใจดี (เว้นว่างเพื่อใช้ชื่อจากอีเมลได้)'
-                          : 'เช่น ด.ช. สมชาย สายวิทย์'
-                      }
-                      className="w-full px-3.5 py-2.5 bg-white border-2 border-stone-300 focus:border-stone-900 rounded-xl text-sm sm:text-base font-bold"
-                    />
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setGoogleEmailInput('6711502234@chandra.ac.th');
-                      }}
-                      className="text-xs font-black px-2.5 py-1.5 rounded-lg bg-white border border-stone-400 hover:border-stone-900 text-stone-700 cursor-pointer flex items-center gap-1"
-                    >
-                      <DoodleSparkles className="w-3.5 h-3.5" />
-                      <span>ใช้ 6711502234@chandra.ac.th</span>
-                    </button>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="w-full py-3 px-4 bg-emerald-500 hover:bg-emerald-600 text-white font-black rounded-xl border-2 border-stone-900 shadow-[2px_2px_0px_#18181b] flex items-center justify-center gap-2 cursor-pointer transition-all text-sm sm:text-base"
-                  >
-                    <DoodleCheck className="w-5 h-5" />
-                    <span>เข้าใช้งานด้วยอีเมล Google นี้ทันที</span>
-                  </button>
-                </form>
-              </div>
-            )}
           </div>
 
           <div className="mt-5 pt-4 border-t border-amber-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-center">
