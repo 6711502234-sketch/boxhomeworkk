@@ -198,11 +198,11 @@ export default function App() {
         return;
       }
 
-      // หากมีเซสชันที่ล็อกอินไว้แล้ว ให้ดึงข้อมูลล่าสุดจาก Firestore โดยใช้โปรไฟล์เดิม (ไม่กระโดดไปหน้า Onboarding อื่น)
+      // หากมีเซสชันที่ล็อกอินไว้แล้ว ให้ดึงข้อมูลตามอีเมลที่ล็อกอินจริงเท่านั้น ห้ามนำข้อมูลของบัญชีเก่ามาปน
+      const activeEmail = fbUser.email?.trim().toLowerCase();
       findExistingUserInFirestore({
         uid: fbUser.uid,
-        email: fbUser.email ?? localUser?.googleEmail,
-        name: localUser?.name || (fbUser.displayName ?? undefined),
+        email: activeEmail,
       })
         .then((existing) => {
           if (existing) {
@@ -210,14 +210,24 @@ export default function App() {
             setIsAuthenticated(true);
             safeSetItem('hw_box_saved_google_user', existing);
             safeSetItem('hw_box_user', existing);
-          } else if (localUser) {
+          } else if (
+            localUser &&
+            (!activeEmail ||
+              (localUser.googleEmail &&
+                localUser.googleEmail.trim().toLowerCase() === activeEmail))
+          ) {
             setUser(localUser);
             setIsAuthenticated(true);
           }
           setAuthReady(true);
         })
         .catch(() => {
-          if (localUser) {
+          if (
+            localUser &&
+            (!activeEmail ||
+              (localUser.googleEmail &&
+                localUser.googleEmail.trim().toLowerCase() === activeEmail))
+          ) {
             setUser(localUser);
             setIsAuthenticated(true);
           }
@@ -232,7 +242,11 @@ export default function App() {
   }, []);
 
   /* ---------- Persist to storage ---------- */
-  useEffect(() => { safeSetItem('hw_box_user', user); }, [user]);
+  useEffect(() => {
+    if (isAuthenticated) {
+      safeSetItem('hw_box_user', user);
+    }
+  }, [user, isAuthenticated]);
   useEffect(() => { safeSetItem('hw_box_logged_in', isAuthenticated ? 'true' : 'false'); }, [isAuthenticated]);
   useEffect(() => {
     safeSetItem('hw_box_assignment_tasks_single', assignmentTasks);
@@ -536,13 +550,26 @@ export default function App() {
     });
   }, []);
 
+  // ซิงก์รายการสติกเกอร์ให้ตรงกับบัญชีที่เข้าสู่ระบบปัจจุบันเสมอ (ไม่นำสติกเกอร์ของบัญชีอื่นมาปน)
+  useEffect(() => {
+    const unlockedSet = new Set(user.unlockedStickers || []);
+    setStickers(
+      initialStickers.map((s) => ({
+        ...s,
+        isUnlocked: unlockedSet.has(s.id),
+      }))
+    );
+  }, [user.id, user.unlockedStickers]);
+
   useEffect(() => {
     if (user.role !== 'student') return;
-    if (homeworkList.length >= 1) checkAndUnlockSticker('first-step');
-    if (evaluations.some((e) => e.overallRating === 5)) checkAndUnlockSticker('super-critic');
+    const myHws = homeworkList.filter((h) => h.studentId === user.id);
+    const myEvals = evaluations.filter((e) => e.studentId === user.id);
+    if (myHws.length >= 1) checkAndUnlockSticker('first-step');
+    if (myEvals.some((e) => e.overallRating === 5 || e.ratingStars === 5)) checkAndUnlockSticker('super-critic');
     if (user.totalStars >= 100) checkAndUnlockSticker('century-star');
-    if (homeworkList.length >= 3 && user.totalStars >= 200) checkAndUnlockSticker('homework-legend');
-  }, [user.role, user.totalStars, homeworkList.length, evaluations, checkAndUnlockSticker]);
+    if (myHws.length >= 3 && user.totalStars >= 200) checkAndUnlockSticker('homework-legend');
+  }, [user.id, user.role, user.totalStars, homeworkList, evaluations, checkAndUnlockSticker]);
 
   /* ---------- Login (สำหรับ LoginView แบบเดิม) ---------- */
   const handleLogin = (newUser: UserProfile) => {
@@ -594,7 +621,7 @@ export default function App() {
     triggerStarBurst();
   };
 
-  /* ---------- Logout (ออกจาก Firebase ด้วย) ---------- */
+  /* ---------- Logout (ออกจาก Firebase และล้างข้อมูลบัญชีเดิมออกทั้งหมด) ---------- */
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -602,10 +629,10 @@ export default function App() {
       console.warn('signOut error:', e);
     }
     setIsAuthenticated(false);
-    setPendingGoogleUser(null);
     safeSetItem('hw_box_logged_in', 'false');
     safeSetItem('hw_box_remember_login', 'false');
     safeSetItem('hw_box_saved_google_user', null);
+    safeSetItem('hw_box_user', null);
   };
 
   const handleAwardStars = (amount: number, reason: string) => {
@@ -968,7 +995,21 @@ export default function App() {
     ? lessons.filter(
         (l) => l.teacherId === user.id || (!l.teacherId && l.authorTeacher === user.name)
       )
-    : lessons;
+    : lessons.map((l) => {
+        const myAttempts = examScores.filter(
+          (s) => s.studentId === user.id && s.lessonId === l.id
+        );
+        const myBest =
+          myAttempts.length > 0
+            ? Math.max(...myAttempts.map((a) => a.score))
+            : undefined;
+        const myLast = myAttempts[0]?.submittedAt;
+        return {
+          ...l,
+          bestScore: myBest,
+          lastAttemptAt: myLast,
+        };
+      });
 
   const teacherLessonIds = new Set(visibleLessons.map((l) => l.id));
 
@@ -1025,7 +1066,7 @@ export default function App() {
           (h.taskId && teacherTaskIds.has(h.taskId)) ||
           matchesTeacherClassroom(h.studentClass)
       )
-    : homeworkList;
+    : homeworkList.filter((h) => h.studentId === user.id);
 
   const visibleExamScores = isTeacherRole
     ? examScores.filter(
@@ -1034,7 +1075,7 @@ export default function App() {
           teacherLessonIds.has(s.lessonId) ||
           matchesTeacherClassroom(s.studentClass)
       )
-    : examScores;
+    : examScores.filter((s) => s.studentId === user.id);
 
   const visibleEvaluations = isTeacherRole
     ? evaluations.filter(
@@ -1043,7 +1084,7 @@ export default function App() {
           (e.topicId && teacherTopicIds.has(e.topicId)) ||
           matchesTeacherClassroom(e.studentClass)
       )
-    : evaluations;
+    : evaluations.filter((e) => e.studentId === user.id);
 
   const teacherInteractedStudentIds = new Set<string>([
     ...visibleHomeworkList.map((h) => h.studentId),

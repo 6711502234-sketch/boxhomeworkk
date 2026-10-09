@@ -92,12 +92,14 @@ export const LoginView: React.FC<LoginViewProps> = ({
     const current = getCombinedRegisteredUsers();
     const normName = normalizeIdentity(profile.name);
     const normEmail = normalizeIdentity(profile.googleEmail || profile.usernameOrEmail);
-    const filtered = current.filter(
-      (u) =>
-        u.id !== profile.id &&
-        !(normName && normalizeIdentity(u.name) === normName) &&
-        !(normEmail && normalizeIdentity(u.googleEmail || u.usernameOrEmail) === normEmail)
-    );
+    const filtered = current.filter((u) => {
+      if (u.id === profile.id) return false;
+      const uEmail = normalizeIdentity(u.googleEmail || u.usernameOrEmail);
+      if (normEmail) {
+        return uEmail !== normEmail;
+      }
+      return !(!uEmail && normName && normalizeIdentity(u.name) === normName);
+    });
     safeSetItem('hw_box_registered_users', [profile, ...filtered]);
   };
 
@@ -117,7 +119,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
     try {
       const localUsers = getCombinedRegisteredUsers();
       const existingUser = await findExistingUserInFirestore({
-        name: trimmedName,
+        name: trimmedName.includes('@') ? undefined : trimmedName,
         email: trimmedName.includes('@') ? trimmedName : undefined,
         localUsers,
       });
@@ -166,10 +168,10 @@ export const LoginView: React.FC<LoginViewProps> = ({
         unlockedStickers: match?.unlockedStickers || ['first-step'],
       };
 
+      await saveUserProfileToFirestore(userProfile).catch(() => {});
       safeSetItem('hw_box_logged_in', 'true');
       safeSetItem('hw_box_user', userProfile);
       persistRegisteredUserLocally(userProfile);
-      await saveUserProfileToFirestore(userProfile).catch(() => {});
       triggerFestiveConfetti();
       onLogin(userProfile);
     } finally {
@@ -193,7 +195,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
     try {
       const localUsers = getCombinedRegisteredUsers();
       const existingUser = await findExistingUserInFirestore({
-        name: trimmedName,
+        name: trimmedName.includes('@') ? undefined : trimmedName,
         email: trimmedName.includes('@') ? trimmedName : undefined,
         localUsers,
       });
@@ -237,10 +239,10 @@ export const LoginView: React.FC<LoginViewProps> = ({
         unlockedStickers: [],
       };
 
+      await saveUserProfileToFirestore(userProfile).catch(() => {});
       safeSetItem('hw_box_logged_in', 'true');
       safeSetItem('hw_box_user', userProfile);
       persistRegisteredUserLocally(userProfile);
-      await saveUserProfileToFirestore(userProfile).catch(() => {});
       triggerFestiveConfetti();
       onLogin(userProfile);
     } finally {
@@ -248,7 +250,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
     }
   };
 
-  /** สร้างหรือดึงโปรไฟล์จากข้อมูล Google จริงบน Cloud Firestore (บัญชีที่เคยเข้าสู่ระบบแล้วจะไม่สามารถเข้าสู่ระบบบทบาทอื่นได้อีก) */
+  /** สร้างหรือดึงโปรไฟล์จากข้อมูลอีเมล Google ที่เข้าสู่ระบบจริงบน Cloud Firestore */
   const handleGoogleSuccess = async (googleUser: {
     email: string;
     name?: string;
@@ -261,21 +263,20 @@ export const LoginView: React.FC<LoginViewProps> = ({
     const isTeacher = role === 'teacher';
     const cleanEmail = googleUser.email.trim().toLowerCase();
     const emailPrefix = cleanEmail.split('@')[0];
-    const cleanId = (googleUser.uid || cleanEmail).replace(/[^a-zA-Z0-9_-]/g, '-');
+    const cleanEmailId = cleanEmail.replace(/[^a-zA-Z0-9_-]/g, '-');
     const roleLabel = (r: UserRole) => (r === 'teacher' ? 'คุณครู' : 'นักเรียน');
 
-    // 1. ตรวจสอบว่าบัญชี Google นี้เคยเข้าสู่ระบบไว้แล้วหรือไม่ (ในทุกบทบาท)
+    // 1. ตรวจสอบจากอีเมล Google นี้โดยตรงว่าเคยมีข้อมูลในระบบแล้วหรือไม่
     try {
       const localUsers = getCombinedRegisteredUsers();
       const existingAccount = await findExistingUserInFirestore({
         uid: googleUser.uid,
         email: cleanEmail,
-        name: googleUser.name,
         localUsers,
       });
 
       if (existingAccount) {
-        // หากเคยเข้าสู่ระบบไว้แล้วในบทบาทอื่น -> บล็อกทันที ไม่สามารถเข้าสู่ระบบบทบาทอื่นได้อีก!
+        // หากอีเมลนี้เคยเข้าสู่ระบบไว้แล้วในบทบาทอื่น -> บล็อกทันที ไม่สามารถเข้าสู่ระบบบทบาทอื่นได้อีก
         if (existingAccount.role !== role) {
           auth.signOut().catch(() => {});
           safeSetItem('hw_box_logged_in', 'false');
@@ -286,17 +287,25 @@ export const LoginView: React.FC<LoginViewProps> = ({
           return;
         }
 
-        // บทบาทตรงกับที่เคยเข้าสู่ระบบไว้ -> เข้าสู่ระบบเดิมได้ทันที
+        // บทบาทตรงกับที่เคยเข้าสู่ระบบไว้ -> โหลดข้อมูลของอีเมลนี้โดยตรงและอัปเดตชื่อ/รูปตามบัญชี Google ที่เข้าสู่ระบบ
         const restoredProfile: UserProfile = {
           ...existingAccount,
-          googleEmail: existingAccount.googleEmail || cleanEmail,
-          usernameOrEmail: existingAccount.usernameOrEmail || cleanEmail,
+          id: `google-${cleanEmailId}`,
+          name:
+            googleUser.name?.trim() ||
+            (isTeacher ? teacherFullName.trim() : studentFullName.trim()) ||
+            existingAccount.name ||
+            emailPrefix,
+          avatar: googleUser.photoURL || existingAccount.avatar,
+          googleEmail: cleanEmail,
+          usernameOrEmail: cleanEmail,
         };
-        safeSetItem('hw_box_logged_in', 'true');
+        await saveUserProfileToFirestore(restoredProfile).catch(() => {});
         safeSetItem('hw_box_saved_google_user', restoredProfile);
         safeSetItem('hw_box_user', restoredProfile);
+        safeSetItem('hw_box_logged_in', 'true');
         persistRegisteredUserLocally(restoredProfile);
-        setSuccessMessage(`ยินดีต้อนรับกลับมา ${restoredProfile.name}`);
+        setSuccessMessage(`ยินดีต้อนรับกลับมา ${restoredProfile.name} (${cleanEmail})`);
         triggerFestiveConfetti();
         setIsLoading(false);
         onLogin(restoredProfile);
@@ -306,10 +315,10 @@ export const LoginView: React.FC<LoginViewProps> = ({
       console.warn('Firestore profile lookup notice:', e);
     }
 
-    // 2. กรณีไม่เคยเข้าสู่ระบบมาก่อน -> สร้างโปรไฟล์ผูกกับบทบาทที่เลือกไว้ถาวร
-    const profileDocId = `google-${cleanId}`;
+    // 2. กรณีเป็นอีเมลใหม่ที่ยังไม่เคยเข้าสู่ระบบมาก่อน -> สร้างโปรไฟล์ใหม่ตามอีเมลที่ล็อกอินเข้ามาโดยเฉพาะ
+    const profileDocId = `google-${cleanEmailId}`;
     const existingRecord = studentRecords.find(
-      (s) => s.id === `std-${cleanId}` || s.studentIdCode === emailPrefix
+      (s) => s.id === profileDocId || (googleUser.uid && s.id === googleUser.uid)
     );
 
     const cleanLevel =
@@ -323,11 +332,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
       .filter(Boolean);
 
     const resolvedName =
-      (isTeacher ? teacherFullName.trim() : studentFullName.trim()) ||
       googleUser.name?.trim() ||
-      (isTeacher
-        ? `คุณครู${emailPrefix}`
-        : existingRecord?.name || `นักเรียน (${emailPrefix})`);
+      (isTeacher ? teacherFullName.trim() : studentFullName.trim()) ||
+      emailPrefix;
 
     const userProfile: UserProfile = {
       id: profileDocId,
@@ -336,11 +343,11 @@ export const LoginView: React.FC<LoginViewProps> = ({
       classRoom: isTeacher ? teachingClasses.trim() || 'ทุกห้อง' : studentClass,
       gradeLevel: isTeacher ? undefined : cleanLevel,
       room: isTeacher ? undefined : studentRoom || '1',
-      studentNo: isTeacher ? 'คุณครู' : existingRecord?.studentNo || studentNo || '01',
+      studentNo: isTeacher ? 'คุณครู' : existingRecord?.studentNo || studentNo || '1',
       studentIdCode: isTeacher
         ? undefined
         : existingRecord?.studentIdCode || `STD-${emailPrefix.slice(0, 6).toUpperCase()}`,
-      teacherIdCode: isTeacher ? `TCH-${cleanId.slice(0, 5).toUpperCase()}` : undefined,
+      teacherIdCode: isTeacher ? `TCH-${emailPrefix.slice(0, 5).toUpperCase()}` : undefined,
       subjectDepartment: isTeacher ? subjectDepartment : undefined,
       teachingSubject: isTeacher ? teachingSubject.trim() || undefined : undefined,
       teachingClasses: isTeacher ? classList : undefined,
@@ -354,14 +361,14 @@ export const LoginView: React.FC<LoginViewProps> = ({
     };
 
     try {
-      safeSetItem('hw_box_logged_in', 'true');
-      safeSetItem('hw_box_saved_google_user', userProfile);
-      safeSetItem('hw_box_user', userProfile);
-      persistRegisteredUserLocally(userProfile);
-
       await saveUserProfileToFirestore(userProfile).catch((err) =>
         console.warn('Firestore sync warning:', err)
       );
+
+      safeSetItem('hw_box_saved_google_user', userProfile);
+      safeSetItem('hw_box_user', userProfile);
+      safeSetItem('hw_box_logged_in', 'true');
+      persistRegisteredUserLocally(userProfile);
 
       if (!isTeacher) {
         const newStudentRecord: StudentRecord = {
@@ -380,7 +387,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
         await saveStudentRecordToFirestore(newStudentRecord).catch(() => {});
       }
 
-      setSuccessMessage(`ยินดีต้อนรับ ${userProfile.name}`);
+      setSuccessMessage(`ยินดีต้อนรับ ${userProfile.name} (${cleanEmail})`);
       triggerFestiveConfetti();
       onLogin(userProfile);
     } catch (err) {
@@ -410,6 +417,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
     setIsLoading(true);
     try {
+      // เคลียร์เซสชันเก่าก่อนเปิดหน้าเลือกบัญชี Google เพื่อให้ดึงข้อมูลตามอีเมลที่เลือกใหม่เสมอ
+      await auth.signOut().catch(() => {});
       googleProvider.setCustomParameters({ prompt: 'select_account' });
       const result = await signInWithPopup(auth, googleProvider);
       const fbUser = result.user;
@@ -426,24 +435,26 @@ export const LoginView: React.FC<LoginViewProps> = ({
       throw new Error('บัญชี Google นี้ไม่มีอีเมลที่ใช้งานได้');
     } catch (err: any) {
       console.warn('Firebase signInWithPopup notice:', err?.code || err);
+      setIsLoading(false);
 
       if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
-        setIsLoading(false);
         return;
       }
 
-      // หากเปิดในสภาพแวดล้อมพรีวิวที่บล็อก Popup ให้เข้าสู่ระบบด้วยบัญชี Google ที่บันทึกไว้หรืออีเมลผู้ใช้ทันทีโดยไม่แสดงแผงกรอกซ้ำซ้อน
-      const savedGoogle = safeGetItem<UserProfile | null>('hw_box_saved_google_user', null);
-      const fallbackEmail = savedGoogle?.googleEmail || '6711502234@chandra.ac.th';
-      const fallbackName =
-        (role === 'teacher' ? teacherFullName.trim() : studentFullName.trim()) ||
-        savedGoogle?.name ||
-        undefined;
+      // กรณีกรอกอีเมลไว้ในช่องชื่อ (เช่น ทดสอบในหน้าต่างพรีวิวที่บล็อก Popup) ให้ใช้อีเมลที่กรอกนั้นแทนโดยไม่ดึงบัญชีเก่ามาปน
+      const typedInput = (role === 'teacher' ? teacherFullName : studentFullName).trim();
+      if (typedInput.includes('@')) {
+        setIsLoading(true);
+        await handleGoogleSuccess({
+          email: typedInput,
+          name: typedInput.split('@')[0],
+        });
+        return;
+      }
 
-      await handleGoogleSuccess({
-        email: fallbackEmail,
-        name: fallbackName,
-      });
+      setErrorMessage(
+        'ไม่สามารถเปิดหน้าต่างเลือกบัญชี Google บนโดเมนนี้ได้ กรุณาตรวจสอบการอนุญาตโดเมนใน Firebase Console หรือพิมพ์อีเมลในช่องชื่อแล้วกดเข้าสู่ระบบ'
+      );
     }
   };
 

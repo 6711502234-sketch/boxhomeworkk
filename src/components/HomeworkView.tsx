@@ -628,7 +628,7 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
     const matchClass = classFilter === 'all' || item.studentClass === classFilter || item.studentClass.includes(classFilter);
     const matchTask = taskFilter === 'all' || item.taskId === taskFilter;
 
-    return matchSearch && matchStatus && matchClass && (isTeacher ? true : item.studentId === currentUser.id || true);
+    return matchSearch && matchStatus && matchClass && (isTeacher ? true : item.studentId === currentUser.id);
   });
 
   const mySubmissions = homeworkList.filter((h) => h.studentId === currentUser.id);

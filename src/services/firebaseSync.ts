@@ -313,6 +313,8 @@ export async function findExistingUserInFirestore(criteria: {
   const normEmail = normalizeIdentity(criteria.email);
   const normName = normalizeIdentity(criteria.name);
   const normUid = criteria.uid?.trim();
+  const cleanGoogleUid = normUid ? `google-${normUid.replace(/[^a-zA-Z0-9_-]/g, '-')}` : '';
+  const cleanEmailDocId = normEmail ? `google-${normEmail.replace(/[^a-zA-Z0-9_-]/g, '-')}` : '';
 
   const matchesCriteria = (u: Record<string, any>, docId?: string): boolean => {
     const uId = String(u.id || docId || '').trim();
@@ -324,9 +326,22 @@ export async function findExistingUserInFirestore(criteria: {
       return false;
     }
 
-    if (normUid && uId === normUid) return true;
-    if (normEmail && uEmail && uEmail === normEmail) return true;
-    if (!normEmail && normName && uName && uName === normName) return true;
+    // หากเป็นการค้นหาด้วยอีเมล (เช่น เข้าสู่ระบบด้วย Google) ต้องตรงกับเอกสารของอีเมลนี้โดยเฉพาะ ห้ามดึงข้อมูลที่สมัครผ่านฟอร์มธรรมดาหรือของอีเมลอื่นมาปนเด็ดขาด
+    if (normEmail) {
+      if (uId.startsWith('std-') || uId.startsWith('tch-') || uId.startsWith('user-')) {
+        return false;
+      }
+      if (cleanEmailDocId && uId === cleanEmailDocId) {
+        return true;
+      }
+      if (normUid && (uId === normUid || uId === cleanGoogleUid) && (!uEmail || uEmail === normEmail)) {
+        return true;
+      }
+      return false;
+    }
+
+    if (normUid && (uId === normUid || uId === cleanGoogleUid)) return true;
+    if (normName && uName && uName === normName && !uEmail) return true;
     return false;
   };
 
