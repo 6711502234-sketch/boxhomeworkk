@@ -1202,33 +1202,13 @@ export default function App() {
     );
   }
 
-  const isAuthBridgeMode =
-    typeof window !== 'undefined' &&
-    new URLSearchParams(window.location.search).get('google_auth_bridge') === '1';
-
-  if (!isAuthenticated || isAuthBridgeMode) {
+  if (!isAuthenticated) {
     return (
-      <>
-        <LoginView
-          onLogin={handleLogin}
-          studentRecords={studentRecords}
-          registeredUsers={registeredUsers}
-          onOpenCloudModal={() => setIsCloudModalOpen(true)}
-        />
-        <CloudDeployModal
-          isOpen={isCloudModalOpen}
-          onClose={() => setIsCloudModalOpen(false)}
-          counts={{
-            tasks: assignmentTasks.length,
-            homeworks: homeworkList.length,
-            evaluations: evaluations.length,
-            reflections: reflectionTopics.length,
-            students: studentRecords.length,
-            exams: examScores.length,
-            lessons: lessons.length,
-          }}
-        />
-      </>
+      <LoginView
+        onLogin={handleLogin}
+        studentRecords={studentRecords}
+        registeredUsers={registeredUsers}
+      />
     );
   }
 
