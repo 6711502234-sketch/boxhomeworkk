@@ -9,7 +9,6 @@ import {
   downloadCsvForGoogleSheets,
   SyncPayload,
   getStudentRegistrations,
-  getTeacherRegistrations,
 } from '../services/googleSheetsService';
 import {
   Homework,
@@ -17,7 +16,6 @@ import {
   TeacherEvaluation,
   StudentRecord,
   StudentRegistrationRecord,
-  TeacherRegistrationRecord,
 } from '../types';
 import { triggerFestiveConfetti, triggerStarBurst } from '../utils/confetti';
 import {
@@ -85,7 +83,6 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
 
   // Registrations state for quick stats & CSV download
   const [studentRegs, setStudentRegs] = useState<StudentRegistrationRecord[]>([]);
-  const [teacherRegs, setTeacherRegs] = useState<TeacherRegistrationRecord[]>([]);
 
   useEffect(() => {
     if (isOpen) {
@@ -97,7 +94,6 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       setStatusMessage(null);
       setIsError(false);
       setStudentRegs(getStudentRegistrations());
-      setTeacherRegs(getTeacherRegistrations());
     }
   }, [isOpen]);
 
@@ -159,9 +155,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
     setIsError(false);
 
     const freshStudentRegs = getStudentRegistrations();
-    const freshTeacherRegs = getTeacherRegistrations();
     setStudentRegs(freshStudentRegs);
-    setTeacherRegs(freshTeacherRegs);
 
     const payload: SyncPayload = {
       action: 'sync_all',
@@ -209,7 +203,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
         recommendationText: ev.recommendationText,
         submittedAt: ev.submittedAt,
       })),
-      // 5. 🧑‍🎓 ชีตรายชื่อผู้สมัครนักเรียน
+      // ชีตรายชื่อผู้สมัครนักเรียน
       studentRegistrations: freshStudentRegs.map((sr) => ({
         registeredAt: sr.registeredAt,
         firstName: sr.firstName,
@@ -217,14 +211,6 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
         studentNo: sr.studentNo,
         studentIdCode: sr.studentIdCode,
         classRoom: sr.classRoom,
-      })),
-      // 6. 👩‍🏫 ชีตรายชื่อผู้สมัครคุณครู
-      teacherRegistrations: freshTeacherRegs.map((tr) => ({
-        registeredAt: tr.registeredAt,
-        firstName: tr.firstName,
-        lastName: tr.lastName,
-        subject: tr.subject,
-        email: tr.email,
       })),
     };
 
@@ -287,26 +273,6 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
     triggerStarBurst();
   };
 
-  // 2. ผู้สมัครคุณครู (วันเวลาที่สมัคร, ชื่อ, นามสกุล, กลุ่มสาระ/รายวิชา, อีเมลครู)
-  const handleExportTeacherRegistrationCsv = () => {
-    const headers = [
-      'วันเวลาที่สมัคร',
-      'ชื่อ',
-      'นามสกุล',
-      'กลุ่มสาระ/รายวิชา',
-      'อีเมลครู',
-    ];
-    const data = getTeacherRegistrations();
-    const rows = data.map((tr) => [
-      tr.registeredAt,
-      tr.firstName,
-      tr.lastName,
-      tr.subject,
-      tr.email,
-    ]);
-    downloadCsvForGoogleSheets('TaskHub_รายชื่อผู้สมัครคุณครู', headers, rows);
-    triggerStarBurst();
-  };
 
   // 3. สรุปคะแนนนักเรียน
   const handleExportStudentRecordCsv = () => {
@@ -436,11 +402,11 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 เชื่อมต่อกับ Google Sheets
               </h3>
               <span className="bg-emerald-200 text-emerald-950 font-black text-[11px] px-2.5 py-0.5 rounded-full border border-zinc-900">
-                Live Sync 6 ชีต
+                Live Sync 5 ชีต
               </span>
             </div>
             <p className="text-xs font-semibold text-zinc-600 mt-0.5">
-              ส่งออกและซิงค์ข้อมูลสมุดคะแนน การส่งงาน และชีตรายชื่อผู้สมัครนักเรียน & คุณครูแยกกันลง Google Spreadsheet
+              ส่งออกและซิงค์ข้อมูลสมุดคะแนน การส่งงาน คะแนนข้อสอบ มุมสะท้อน และรายชื่อผู้สมัครนักเรียนลง Google Spreadsheet
             </p>
           </div>
         </div>
@@ -470,7 +436,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
             }`}
           >
             <Download className="w-3.5 h-3.5" />
-            <span>ดาวน์โหลด CSV (6 หมวดหมู่)</span>
+            <span>ดาวน์โหลด CSV (5 หมวดหมู่)</span>
           </button>
 
           <button
@@ -569,7 +535,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 className="flex-1 py-3 px-4 bg-emerald-400 hover:bg-emerald-500 text-zinc-950 font-black text-sm rounded-xl sketch-btn flex items-center justify-center gap-2 cursor-pointer shadow-[3px_3px_0px_#18181b] disabled:opacity-60"
               >
                 <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span>{isSyncing ? 'กำลังซิงค์ข้อมูล...' : '✨ ซิงค์ 6 ชีตขึ้น Google Sheets ทันที'}</span>
+                <span>{isSyncing ? 'กำลังซิงค์ข้อมูล...' : '✨ ซิงค์ 5 ชีตขึ้น Google Sheets ทันที'}</span>
               </button>
 
               <button
@@ -598,7 +564,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
             {/* Data to be Synced Summary Overview */}
             <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200 space-y-2">
               <div className="flex items-center justify-between text-xs font-black text-zinc-800">
-                <span>📊 รายการข้อมูลที่จะถูกส่งและแยก 6 แผ่นชีตอัตโนมัติ:</span>
+                <span>📊 รายการข้อมูลที่จะถูกส่งและแยก 5 แผ่นชีตอัตโนมัติ:</span>
                 {config.lastSyncedAt && (
                   <span className="text-[11px] text-zinc-500 font-semibold">
                     ซิงค์ล่าสุด: {config.lastSyncedAt}
@@ -613,29 +579,23 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                   <span className="text-[9px] text-sky-700 block mt-0.5">วันเวลา, ชื่อ, นามสกุล, เลขที่, รหัส</span>
                 </div>
 
-                <div className="p-2.5 bg-purple-50 rounded-lg border border-purple-300">
-                  <span className="text-purple-800 block text-[10px] font-black">👩‍🏫 2. ผู้สมัครคุณครู</span>
-                  <span className="font-black text-zinc-900 text-sm">{teacherRegs.length} ท่าน</span>
-                  <span className="text-[9px] text-purple-700 block mt-0.5">วันเวลา, ชื่อ, นามสกุล, สาระ, Email</span>
-                </div>
-
                 <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200">
-                  <span className="text-zinc-500 block text-[10px]">3. สรุปคะแนนนักเรียน</span>
+                  <span className="text-zinc-500 block text-[10px]">2. สรุปคะแนนนักเรียน</span>
                   <span className="font-black text-zinc-900 text-sm">{studentRecords.length} คน</span>
                 </div>
 
                 <div className="p-2.5 bg-emerald-50 rounded-lg border border-emerald-200">
-                  <span className="text-zinc-500 block text-[10px]">4. การส่งการบ้าน</span>
+                  <span className="text-zinc-500 block text-[10px]">3. การส่งการบ้าน</span>
                   <span className="font-black text-zinc-900 text-sm">{homeworkList.length} รายการ</span>
                 </div>
 
                 <div className="p-2.5 bg-indigo-50 rounded-lg border border-indigo-200">
-                  <span className="text-zinc-500 block text-[10px]">5. คะแนนแบบทดสอบ</span>
+                  <span className="text-zinc-500 block text-[10px]">4. คะแนนแบบทดสอบ</span>
                   <span className="font-black text-zinc-900 text-sm">{examScores.length} ครั้ง</span>
                 </div>
 
                 <div className="p-2.5 bg-pink-50 rounded-lg border border-pink-200">
-                  <span className="text-zinc-500 block text-[10px]">6. มุมสะท้อนคิด</span>
+                  <span className="text-zinc-500 block text-[10px]">5. มุมสะท้อนคิด</span>
                   <span className="font-black text-zinc-900 text-sm">{evaluations.length} รายการ</span>
                 </div>
               </div>
@@ -691,7 +651,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-zinc-800">
-                  💻 โค้ด Google Apps Script (พร้อมแยก 6 แผ่นชีตอัตโนมัติ):
+                  💻 โค้ด Google Apps Script (พร้อมแยก 5 แผ่นชีตอัตโนมัติ):
                 </span>
                 <button
                   type="button"
@@ -734,23 +694,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 </p>
               </button>
 
-              {/* 2. ผู้สมัครคุณครู */}
-              <button
-                type="button"
-                onClick={handleExportTeacherRegistrationCsv}
-                className="p-4 bg-white hover:bg-purple-50 rounded-xl sketch-border text-left shadow-[2px_2px_0px_#000] cursor-pointer group transition-all border-purple-300"
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xl">👩‍🏫</span>
-                  <Download className="w-4 h-4 text-purple-600 group-hover:text-purple-950" />
-                </div>
-                <div className="text-sm font-black text-zinc-900">รายชื่อผู้สมัครคุณครู</div>
-                <p className="text-[11px] font-semibold text-zinc-600 mt-0.5">
-                  วันเวลาที่สมัคร, ชื่อ, นามสกุล, กลุ่มสาระ/รายวิชา, อีเมลครู ({teacherRegs.length} รายการ)
-                </p>
-              </button>
-
-              {/* 3. สรุปคะแนนนักเรียน */}
+              {/* 2. สรุปคะแนนนักเรียน */}
               <button
                 type="button"
                 onClick={handleExportStudentRecordCsv}
@@ -766,7 +710,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 </p>
               </button>
 
-              {/* 4. รายการส่งการบ้าน */}
+              {/* 3. รายการส่งการบ้าน */}
               <button
                 type="button"
                 onClick={handleExportHomeworkCsv}
@@ -782,7 +726,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 </p>
               </button>
 
-              {/* 5. ผลคะแนนแบบทดสอบ */}
+              {/* 4. ผลคะแนนแบบทดสอบ */}
               <button
                 type="button"
                 onClick={handleExportQuizCsv}
@@ -798,7 +742,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 </p>
               </button>
 
-              {/* 6. มุมสะท้อนคิด */}
+              {/* 5. มุมสะท้อนคิด */}
               <button
                 type="button"
                 onClick={handleExportReflectionCsv}

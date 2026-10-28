@@ -225,7 +225,7 @@ export interface SyncPayload {
     recommendationText: string;
     submittedAt: string;
   }>;
-  // New Registration Sheets for Students and Teachers
+  // Registration Sheet for Students
   studentRegistrations?: Array<{
     registeredAt: string;
     firstName: string;
@@ -233,13 +233,6 @@ export interface SyncPayload {
     studentNo: string;
     studentIdCode: string;
     classRoom?: string;
-  }>;
-  teacherRegistrations?: Array<{
-    registeredAt: string;
-    firstName: string;
-    lastName: string;
-    subject: string;
-    email: string;
   }>;
 }
 
@@ -465,24 +458,12 @@ function doPost(e) {
       sheet5.autoResizeColumns(1, 6);
     }
 
-    // 6. 👩‍🏫 ชีตรายชื่อผู้สมัครคุณครู (Teacher Registrations)
-    if (data.teacherRegistrations && data.teacherRegistrations.length > 0) {
-      var sheet6 = ss.getSheetByName("รายชื่อผู้สมัครคุณครู") || ss.insertSheet("รายชื่อผู้สมัครคุณครู");
-      sheet6.clear();
-      sheet6.appendRow(["วันเวลาที่สมัคร", "ชื่อ", "นามสกุล", "กลุ่มสาระ/รายวิชา", "อีเมลครู"]);
-      sheet6.getRange(1, 1, 1, 5).setBackground("#E9D5FF").setFontWeight("bold");
-      sheet6.setFrozenRows(1);
-
-      data.teacherRegistrations.forEach(function(tr) {
-        sheet6.appendRow([
-          tr.registeredAt || "",
-          tr.firstName || "",
-          tr.lastName || "",
-          tr.subject || "",
-          tr.email || ""
-        ]);
-      });
-      sheet6.autoResizeColumns(1, 5);
+    // หากเคยมีชีต "รายชื่อผู้สมัครคุณครู" ให้ลบออก
+    var oldTeacherSheet = ss.getSheetByName("รายชื่อผู้สมัครคุณครู");
+    if (oldTeacherSheet) {
+      try {
+        ss.deleteSheet(oldTeacherSheet);
+      } catch (errDel) {}
     }
 
     return ContentService.createTextOutput(JSON.stringify({

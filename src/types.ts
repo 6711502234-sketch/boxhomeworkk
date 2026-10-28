@@ -1,4 +1,15 @@
-export type UserRole = 'student' | 'teacher';
+export type UserRole = 'student' | 'teacher' | 'admin';
+
+export interface CustomTopicPreset {
+  id: string;
+  category: string;
+  label: string;
+  defaultTitle: string;
+  defaultPrompt: string;
+  description?: string;
+  createdBy?: string;
+  createdAt?: string;
+}
 
 export interface UserProfile {
   id: string;
@@ -18,11 +29,15 @@ export interface UserProfile {
   unlockedStickers: string[]; // sticker IDs
   googleEmail?: string; // e.g. "user@gmail.com" or school email
   usernameOrEmail?: string; // e.g. "6711502234@chandra.ac.th" or username
+  password?: string; // password for admin / user accounts
+  phone?: string; // contact phone number
+  department?: string; // department / division
 }
 
 export type HomeworkStatus = 'pending' | 'reviewed' | 'needs_fix' | 'graded';
 
 export type AssessmentType =
+  | 'คำถามชวนคิดทั่วไป'
   | 'Assessment as Learning'
   | 'Assessment for Learning'
   | 'Assessment of Learning';
@@ -72,7 +87,45 @@ export interface Homework {
   maxScore?: number;
   teacherComment?: string;
   feedback?: string;
+  teacherFeedback?: string;
+  linkUrl?: string;
   earnedStars: number;
+}
+
+export interface WhiteboardSession {
+  id: string;
+  title: string;
+  topicCategory?: string;
+  promptQuestion: string;
+  targetClass: string; // e.g. "ทุกห้อง", "ห้อง 1", "ห้อง 2", "ม.2/1"
+  teacherId: string;
+  authorTeacher?: string;
+  teacherName?: string;
+  teacherAvatar?: string;
+  status: 'active' | 'ended'; // 'active' (กำลังสนทนาสด) | 'ended' (หยุดสนทนาแล้ว)
+  imageUrl?: string; // Optional attached picture
+  createdAt: string;
+  endedAt?: string;
+}
+
+export interface WhiteboardMessage {
+  id: string;
+  sessionId: string;
+  senderId: string;
+  senderName: string;
+  senderRole: UserRole;
+  senderAvatar?: string;
+  senderClass?: string;
+  senderNo?: string;
+  text: string;
+  imageUrl?: string; // Photo sent by teacher or student
+  ratingStars?: number; // 1-5 stars
+  starsAwarded?: number;
+  isAnonymous?: boolean;
+  createdAt: string;
+  timestamp?: number;
+  isEdited?: boolean;
+  editedAt?: string;
 }
 
 export interface TeacherReflectionTopic {
@@ -80,6 +133,7 @@ export interface TeacherReflectionTopic {
   assessmentType?: AssessmentType;
   title: string;
   promptQuestion: string;
+  category?: string;
   targetClass: string; // e.g. "ทุกห้อง", "ห้อง 1", "ห้อง 2"
   authorTeacher: string;
   teacherId?: string;
@@ -103,6 +157,7 @@ export interface TeacherEvaluation {
   overallRating?: number;
   improvementText: string;
   recommendationText: string;
+  teacherFeedback?: string;
   submittedAt: string;
   isAnonymous: boolean;
   teacherReply?: string;
@@ -124,6 +179,7 @@ export interface QuizLesson {
   id: string;
   title: string;
   subtitle: string;
+  description?: string;
   icon: string;
   badgeColor?: string;
   subject?: string;
@@ -134,6 +190,7 @@ export interface QuizLesson {
   dueDate?: string;
   timeLimitMinutes?: number;
   questions: QuizQuestion[];
+  totalQuestions?: number;
   bestScore?: number;
   lastAttemptAt?: string;
 }
@@ -222,5 +279,22 @@ export interface TeacherRegistrationRecord {
   email: string;
 }
 
-export type ActiveTab = 'homework' | 'quiz' | 'scorebook' | 'reflection' | 'dashboard';
-
+export type ActiveTab =
+  | 'homework'
+  | 'quiz'
+  | 'scorebook'
+  | 'reflection'
+  | 'dashboard'
+  | 'admin'
+  | 'admin_dashboard'
+  | 'admin_users'
+  | 'admin_homework'
+  | 'admin_tasks'
+  | 'admin_quizzes'
+  | 'admin_exam_scores'
+  | 'admin_scorebook'
+  | 'admin_gradebook'
+  | 'admin_reflections'
+  | 'admin_presets'
+  | 'admin_reports'
+  | 'admin_profile';

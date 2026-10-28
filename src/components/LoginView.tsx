@@ -11,6 +11,7 @@ import {
   findExistingUserInFirestore,
   normalizeIdentity,
 } from '../services/firebaseSync';
+import { parseThaiName, saveStudentRegistration } from '../services/googleSheetsService';
 import appletConfig from '../../firebase-applet-config.json';
 import {
   AvatarStudentBoyGlasses,
@@ -32,6 +33,11 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
+  Lock,
+  Eye,
+  EyeOff,
+  User,
+  KeyRound,
 } from 'lucide-react';
 
 interface LoginViewProps {
@@ -52,22 +58,68 @@ export const LoginView: React.FC<LoginViewProps> = ({
   registeredUsers = [],
   onOpenCloudModal,
 }) => {
-  const [role, setRole] = useState<UserRole>(initialRole);
+  // Load previously remembered login inputs (if any)
+  const savedInputs = safeGetItem<{
+    studentFullName?: string;
+    studentLevel?: string;
+    studentRoom?: string;
+    studentNo?: string;
+    teacherFullName?: string;
+    subjectDepartment?: string;
+    teachingSubject?: string;
+    teachingClasses?: string;
+    adminUsername?: string;
+    role?: UserRole;
+  } | null>('hw_box_last_login_inputs', null);
+  const lastUser = safeGetItem<UserProfile | null>('hw_box_user', null);
+
+  const [role, setRole] = useState<UserRole>(
+    savedInputs?.role || (lastUser?.role as UserRole) || initialRole
+  );
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('');
 
-  // Student Form State
-  const [studentFullName, setStudentFullName] = useState<string>('');
-  const [studentLevel, setStudentLevel] = useState<string>('ม.2');
-  const [studentRoom, setStudentRoom] = useState<string>('1');
-  const [studentNo, setStudentNo] = useState<string>('1');
+  // Student Form State (Remembered & synced with account credentials)
+  const [studentFullName, setStudentFullName] = useState<string>(
+    savedInputs?.studentFullName || (lastUser?.role === 'student' ? lastUser.name : '') || ''
+  );
+  const [studentLevel, setStudentLevel] = useState<string>(
+    savedInputs?.studentLevel || (lastUser?.role === 'student' ? lastUser.gradeLevel || 'ม.2' : 'ม.2')
+  );
+  const [studentRoom, setStudentRoom] = useState<string>(
+    savedInputs?.studentRoom || (lastUser?.role === 'student' ? lastUser.room || '1' : '1')
+  );
+  const [studentNo, setStudentNo] = useState<string>(
+    savedInputs?.studentNo || (lastUser?.role === 'student' ? lastUser.studentNo || '1' : '1')
+  );
 
-  // Teacher Form State
-  const [teacherFullName, setTeacherFullName] = useState<string>('');
-  const [subjectDepartment, setSubjectDepartment] = useState<string>('วิทยาศาสตร์และเทคโนโลยี');
-  const [teachingSubject, setTeachingSubject] = useState<string>('');
-  const [teachingClasses, setTeachingClasses] = useState<string>('');
+  // Teacher Form State (Remembered & synced with account credentials)
+  const [teacherFullName, setTeacherFullName] = useState<string>(
+    savedInputs?.teacherFullName || (lastUser?.role === 'teacher' ? lastUser.name : '') || ''
+  );
+  const [subjectDepartment, setSubjectDepartment] = useState<string>(
+    savedInputs?.subjectDepartment ||
+      (lastUser?.role === 'teacher'
+        ? lastUser.subjectDepartment || 'วิทยาศาสตร์และเทคโนโลยี'
+        : 'วิทยาศาสตร์และเทคโนโลยี')
+  );
+  const [teachingSubject, setTeachingSubject] = useState<string>(
+    savedInputs?.teachingSubject || (lastUser?.role === 'teacher' ? lastUser.teachingSubject || '' : '')
+  );
+  const [teachingClasses, setTeachingClasses] = useState<string>(
+    savedInputs?.teachingClasses ||
+      (lastUser?.role === 'teacher'
+        ? (lastUser.teachingClasses ? lastUser.teachingClasses.join(', ') : lastUser.classRoom) || ''
+        : '')
+  );
+
+  // Admin Login Credentials (Username & Password)
+  const [adminUsername, setAdminUsername] = useState<string>(
+    savedInputs?.adminUsername || (lastUser?.role === 'admin' ? lastUser.usernameOrEmail || lastUser.name || 'admin' : 'admin')
+  );
+  const [adminPassword, setAdminPassword] = useState<string>('admin123');
+  const [showAdminPassword, setShowAdminPassword] = useState<boolean>(false);
 
   // Google Account Chooser Modal State (Fallback สำหรับหน้าพรีวิวที่บล็อก Popup หรือโดเมน GitHub)
   const [isGooglePickerOpen, setIsGooglePickerOpen] = useState<boolean>(false);
@@ -182,28 +234,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
     setIsLoading(true);
     try {
-      const localUsers = getCombinedRegisteredUsers();
-      const existingUser = await findExistingUserInFirestore({
-        name: trimmedName.includes('@') ? undefined : trimmedName,
-        email: trimmedName.includes('@') ? trimmedName : undefined,
-        localUsers,
-      });
-
-      if (existingUser) {
-        if (existingUser.role !== 'student') {
-          setErrorMessage(
-            `บัญชี "${existingUser.name}" เคยเข้าสู่ระบบในบทบาท "คุณครู" แล้ว ไม่สามารถเข้าสู่ระบบในบทบาท "นักเรียน" ได้อีก กรุณาเลือกบทบาท "สำหรับคุณครู"`
-          );
-          return;
-        }
-        safeSetItem('hw_box_logged_in', 'true');
-        safeSetItem('hw_box_user', existingUser);
-        persistRegisteredUserLocally(existingUser);
-        triggerFestiveConfetti();
-        onLogin(existingUser);
-        return;
-      }
-
       const cleanLevel =
         studentLevel.startsWith('ม.') || studentLevel.startsWith('ป.')
           ? studentLevel
@@ -213,30 +243,86 @@ export const LoginView: React.FC<LoginViewProps> = ({
       const classRoom = `${cleanLevel}/${cleanRoom}`;
       const cleanCode = `STD-${cleanLevel.replace(/[^0-9]/g, '')}${cleanNo.padStart(2, '0')}`;
 
-      const match = studentRecords.find(
-        (s) =>
-          s.name === trimmedName ||
-          (s.classRoom === classRoom && s.studentNo === cleanNo)
-      );
-
-      const userProfile: UserProfile = {
-        id: match ? match.id : `std-${Date.now().toString().slice(-6)}`,
-        name: trimmedName,
-        role: 'student',
-        classRoom,
-        gradeLevel: cleanLevel,
-        room: cleanRoom,
+      // จำข้อมูลที่กรอกทั้งหมดลง localStorage
+      safeSetItem('hw_box_last_login_inputs', {
+        studentFullName: trimmedName,
+        studentLevel: cleanLevel,
+        studentRoom: cleanRoom,
         studentNo: cleanNo,
-        studentIdCode: match?.studentIdCode || cleanCode,
-        avatar: match?.avatar || 'student-boy-glasses',
-        totalStars: match?.totalStars || 100,
-        unlockedStickers: match?.unlockedStickers || ['first-step'],
-      };
+        role: 'student',
+      });
+
+      const localUsers = getCombinedRegisteredUsers();
+      const existingUser = await findExistingUserInFirestore({
+        name: trimmedName.includes('@') ? undefined : trimmedName,
+        email: trimmedName.includes('@') ? trimmedName : undefined,
+        localUsers,
+      });
+
+      let userProfile: UserProfile;
+
+      if (existingUser) {
+        if (existingUser.role !== 'student') {
+          // หากพบว่าเป็นคุณครู ให้สลับบทบาทไปยังคุณครูและเข้าสู่ระบบ
+          setRole('teacher');
+          setTeacherFullName(existingUser.name);
+          safeSetItem('hw_box_logged_in', 'true');
+          safeSetItem('hw_box_user', existingUser);
+          persistRegisteredUserLocally(existingUser);
+          triggerFestiveConfetti();
+          onLogin(existingUser);
+          return;
+        }
+
+        // นำข้อมูลที่ผู้ใช้กรอกทั้งหมดไปตั้งในข้อมูลประจำตัวของบัญชี
+        userProfile = {
+          ...existingUser,
+          name: trimmedName,
+          classRoom,
+          gradeLevel: cleanLevel,
+          room: cleanRoom,
+          studentNo: cleanNo,
+          studentIdCode: existingUser.studentIdCode || cleanCode,
+        };
+      } else {
+        const match = studentRecords.find(
+          (s) =>
+            s.name === trimmedName ||
+            (s.classRoom === classRoom && s.studentNo === cleanNo)
+        );
+
+        userProfile = {
+          id: match ? match.id : `std-${Date.now().toString().slice(-6)}`,
+          name: trimmedName,
+          role: 'student',
+          classRoom,
+          gradeLevel: cleanLevel,
+          room: cleanRoom,
+          studentNo: cleanNo,
+          studentIdCode: match?.studentIdCode || cleanCode,
+          avatar: match?.avatar || 'student-boy-glasses',
+          totalStars: match?.totalStars || 100,
+          unlockedStickers: match?.unlockedStickers || ['first-step'],
+        };
+      }
 
       await saveUserProfileToFirestore(userProfile).catch(() => {});
       safeSetItem('hw_box_logged_in', 'true');
       safeSetItem('hw_box_user', userProfile);
       persistRegisteredUserLocally(userProfile);
+
+      const { firstName, lastName } = parseThaiName(trimmedName);
+      saveStudentRegistration({
+        id: userProfile.id,
+        registeredAt: new Date().toLocaleString('th-TH'),
+        firstName,
+        lastName,
+        fullName: trimmedName,
+        studentNo: cleanNo,
+        studentIdCode: userProfile.studentIdCode || cleanCode,
+        classRoom,
+      });
+
       triggerFestiveConfetti();
       onLogin(userProfile);
     } finally {
@@ -258,6 +344,21 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
     setIsLoading(true);
     try {
+      const classList = teachingClasses
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean);
+      const targetClassRoom = teachingClasses.trim() || 'ทุกห้อง';
+
+      // จำข้อมูลที่กรอกทั้งหมดลง localStorage
+      safeSetItem('hw_box_last_login_inputs', {
+        teacherFullName: trimmedName,
+        subjectDepartment: subjectDepartment.trim(),
+        teachingSubject: teachingSubject.trim(),
+        teachingClasses: teachingClasses.trim(),
+        role: 'teacher',
+      });
+
       const localUsers = getCombinedRegisteredUsers();
       const existingUser = await findExistingUserInFirestore({
         name: trimmedName.includes('@') ? undefined : trimmedName,
@@ -265,44 +366,50 @@ export const LoginView: React.FC<LoginViewProps> = ({
         localUsers,
       });
 
+      let userProfile: UserProfile;
+
       if (existingUser) {
         if (existingUser.role !== 'teacher') {
-          setErrorMessage(
-            `บัญชี "${existingUser.name}" เคยเข้าสู่ระบบในบทบาท "นักเรียน" แล้ว ไม่สามารถเข้าสู่ระบบในบทบาท "คุณครู" ได้อีก กรุณาเลือกบทบาท "สำหรับนักเรียน"`
-          );
+          // หากพบว่าเป็นนักเรียน ให้สลับบทบาทไปยังนักเรียนและเข้าสู่ระบบ
+          setRole('student');
+          setStudentFullName(existingUser.name);
+          safeSetItem('hw_box_logged_in', 'true');
+          safeSetItem('hw_box_user', existingUser);
+          persistRegisteredUserLocally(existingUser);
+          triggerFestiveConfetti();
+          onLogin(existingUser);
           return;
         }
-        safeSetItem('hw_box_logged_in', 'true');
-        safeSetItem('hw_box_user', existingUser);
-        persistRegisteredUserLocally(existingUser);
-        triggerFestiveConfetti();
-        onLogin(existingUser);
-        return;
+
+        // นำข้อมูลที่คุณครูกรอกทั้งหมดไปตั้งในข้อมูลประจำตัวของบัญชี
+        userProfile = {
+          ...existingUser,
+          name: trimmedName,
+          classRoom: targetClassRoom,
+          subjectDepartment: subjectDepartment.trim() || 'วิทยาศาสตร์และเทคโนโลยี',
+          teachingSubject: teachingSubject.trim() || undefined,
+          teachingClasses: classList,
+        };
+      } else {
+        const cleanTeacherKey = trimmedName
+          .toLowerCase()
+          .replace(/\s+/g, '-');
+
+        userProfile = {
+          id: `tch-${cleanTeacherKey}`,
+          name: trimmedName,
+          role: 'teacher',
+          classRoom: targetClassRoom,
+          studentNo: 'คุณครู',
+          subjectDepartment: subjectDepartment.trim() || 'วิทยาศาสตร์และเทคโนโลยี',
+          teachingSubject: teachingSubject.trim() || undefined,
+          teachingClasses: classList,
+          teacherIdCode: `TCH-${Math.floor(100 + Math.random() * 900)}`,
+          avatar: 'teacher-female-glasses',
+          totalStars: 0,
+          unlockedStickers: [],
+        };
       }
-
-      const classList = teachingClasses
-        .split(',')
-        .map((c) => c.trim())
-        .filter(Boolean);
-
-      const cleanTeacherKey = trimmedName
-        .toLowerCase()
-        .replace(/\s+/g, '-');
-
-      const userProfile: UserProfile = {
-        id: `tch-${cleanTeacherKey}`,
-        name: trimmedName,
-        role: 'teacher',
-        classRoom: teachingClasses.trim() || 'ทุกห้อง',
-        studentNo: 'คุณครู',
-        subjectDepartment: subjectDepartment.trim() || 'วิทยาศาสตร์และเทคโนโลยี',
-        teachingSubject: teachingSubject.trim() || undefined,
-        teachingClasses: classList,
-        teacherIdCode: `TCH-${Math.floor(100 + Math.random() * 900)}`,
-        avatar: 'teacher-female-glasses',
-        totalStars: 0,
-        unlockedStickers: [],
-      };
 
       await saveUserProfileToFirestore(userProfile).catch(() => {});
       safeSetItem('hw_box_logged_in', 'true');
@@ -310,6 +417,127 @@ export const LoginView: React.FC<LoginViewProps> = ({
       persistRegisteredUserLocally(userProfile);
       triggerFestiveConfetti();
       onLogin(userProfile);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAdminSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      const trimmedUser = adminUsername.trim();
+      const enteredPass = adminPassword.trim();
+
+      if (!trimmedUser) {
+        setErrorMessage('กรุณาระบุ Username สำหรับเข้าสู่ระบบผู้ดูแล');
+        setIsLoading(false);
+        return;
+      }
+
+      if (!enteredPass) {
+        setErrorMessage('กรุณาระบุ Password สำหรับเข้าสู่ระบบผู้ดูแล');
+        setIsLoading(false);
+        return;
+      }
+
+      const localUsers = getCombinedRegisteredUsers();
+
+      // Strict RBAC: ตรวจสอบไม่ให้บัญชีที่เคยลงทะเบียนเป็นครูหรือนักเรียนเข้าสู่ระบบ Admin ได้โดยเด็ดขาด
+      const matchedTeacherOrStudent =
+        localUsers.find(
+          (u) =>
+            (u.role === 'teacher' || u.role === 'student') &&
+            (u.usernameOrEmail?.toLowerCase() === trimmedUser.toLowerCase() ||
+              u.googleEmail?.toLowerCase() === trimmedUser.toLowerCase() ||
+              u.name.toLowerCase() === trimmedUser.toLowerCase() ||
+              u.id.toLowerCase() === trimmedUser.toLowerCase())
+        ) ||
+        studentRecords.find(
+          (s) =>
+            s.name.toLowerCase() === trimmedUser.toLowerCase() ||
+            s.studentIdCode?.toLowerCase() === trimmedUser.toLowerCase() ||
+            s.id.toLowerCase() === trimmedUser.toLowerCase()
+        );
+
+      if (matchedTeacherOrStudent) {
+        const roleLabel =
+          'role' in matchedTeacherOrStudent && matchedTeacherOrStudent.role === 'teacher'
+            ? 'คุณครู'
+            : 'นักเรียน';
+        setErrorMessage(
+          `❌ บัญชี "${matchedTeacherOrStudent.name}" ลงทะเบียนเป็น "${roleLabel}" ไว้แล้ว ไม่ได้รับอนุญาตให้เข้าสู่ระบบผู้ดูแลระบบ (Admin) โดยเด็ดขาด`
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      const matchedUser = localUsers.find(
+        (u) =>
+          (u.usernameOrEmail?.toLowerCase() === trimmedUser.toLowerCase() ||
+            u.googleEmail?.toLowerCase() === trimmedUser.toLowerCase() ||
+            u.name.toLowerCase() === trimmedUser.toLowerCase() ||
+            u.id.toLowerCase() === trimmedUser.toLowerCase())
+      );
+
+      let targetProfile: UserProfile;
+
+      // Default Admin credentials: admin / admin123, or specific verified admin accounts
+      const isDefaultAdmin =
+        (trimmedUser.toLowerCase() === 'admin' && enteredPass === 'admin123') ||
+        (trimmedUser.toLowerCase() === '6711502234@chandra.ac.th' &&
+          (enteredPass === 'admin123' || enteredPass.length >= 4));
+
+      if (isDefaultAdmin) {
+        targetProfile =
+          matchedUser && matchedUser.role === 'admin'
+            ? matchedUser
+            : {
+                id: 'admin-system',
+                name: 'ผู้ดูแลระบบ TaskHub',
+                role: 'admin',
+                classRoom: 'ส่วนกลาง (Admin)',
+                studentNo: 'Admin',
+                avatar: '🛡️',
+                totalStars: 999,
+                unlockedStickers: ['all'],
+                googleEmail: '6711502234@chandra.ac.th',
+                usernameOrEmail: 'admin',
+                password: enteredPass,
+              };
+      } else if (matchedUser) {
+        if (matchedUser.role !== 'admin') {
+          setErrorMessage('❌ บัญชีนี้ไม่มีสิทธิ์ผู้ดูแลระบบ (Admin) ไม่สามารถเข้าใช้งานส่วนนี้ได้');
+          setIsLoading(false);
+          return;
+        }
+        if (matchedUser.password && matchedUser.password !== enteredPass) {
+          setErrorMessage('รหัสผ่านผู้ดูแลระบบไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง');
+          setIsLoading(false);
+          return;
+        }
+        targetProfile = matchedUser;
+      } else {
+        setErrorMessage(
+          'ชื่อผู้ใช้หรือรหัสผ่านผู้ดูแลระบบไม่ถูกต้อง (บัญชีเริ่มต้น: admin / รหัสผ่าน: admin123)'
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      await saveUserProfileToFirestore(targetProfile).catch(() => {});
+      safeSetItem('hw_box_saved_google_user', targetProfile);
+      safeSetItem('hw_box_user', targetProfile);
+      safeSetItem('hw_box_logged_in', 'true');
+      safeSetItem('hw_box_last_login_inputs', {
+        ...savedInputs,
+        adminUsername: trimmedUser,
+        role: 'admin',
+      });
+      persistRegisteredUserLocally(targetProfile);
+      triggerFestiveConfetti();
+      onLogin(targetProfile);
     } finally {
       setIsLoading(false);
     }
@@ -340,38 +568,128 @@ export const LoginView: React.FC<LoginViewProps> = ({
         localUsers,
       });
 
-      if (existingAccount) {
-        // หากอีเมลนี้เคยเข้าสู่ระบบไว้แล้วในบทบาทอื่น -> บล็อกทันที ไม่สามารถเข้าสู่ระบบบทบาทอื่นได้อีก
-        if (existingAccount.role !== role) {
-          auth.signOut().catch(() => {});
-          safeSetItem('hw_box_logged_in', 'false');
+      // Strict RBAC: เมื่อพยายามเข้าสู่ระบบแอดมิน (Admin) ห้ามไม่ให้บัญชีครูหรือนักเรียนเข้าใช้งานโดยเด็ดขาด
+      if (role === 'admin') {
+        if (existingAccount && (existingAccount.role === 'teacher' || existingAccount.role === 'student')) {
           setErrorMessage(
-            `บัญชี Google "${cleanEmail}" (${existingAccount.name}) เคยเข้าสู่ระบบในบทบาท "${roleLabel(existingAccount.role)}" แล้ว ไม่สามารถเข้าสู่ระบบในบทบาท "${roleLabel(role)}" ได้อีก กรุณาเลือกแท็บ "สำหรับ${roleLabel(existingAccount.role)}" เพื่อเข้าใช้งาน`
+            `❌ บัญชี Google นี้ (${cleanEmail}) ลงทะเบียนเป็น "${existingAccount.role === 'teacher' ? 'คุณครู' : 'นักเรียน'}" ไว้แล้ว ไม่ได้รับอนุญาตให้เข้าสู่ระบบผู้ดูแลระบบ (Admin) โดยเด็ดขาด`
           );
           setIsLoading(false);
           return;
         }
 
-        // บทบาทตรงกับที่เคยเข้าสู่ระบบไว้ -> โหลดข้อมูลของอีเมลนี้โดยตรงและอัปเดตชื่อ/รูปตามบัญชี Google ที่เข้าสู่ระบบ
+        const matchedNonAdmin = localUsers.find(
+          (u) =>
+            (u.role === 'teacher' || u.role === 'student') &&
+            (u.googleEmail?.toLowerCase() === cleanEmail ||
+              u.usernameOrEmail?.toLowerCase() === cleanEmail)
+        );
+        if (matchedNonAdmin) {
+          setErrorMessage(
+            `❌ บัญชี Google นี้ (${cleanEmail}) ลงทะเบียนเป็น "${matchedNonAdmin.role === 'teacher' ? 'คุณครู' : 'นักเรียน'}" ไว้แล้ว ไม่ได้รับอนุญาตให้เข้าสู่ระบบผู้ดูแลระบบ (Admin) โดยเด็ดขาด`
+          );
+          setIsLoading(false);
+          return;
+        }
+
+        if (cleanEmail !== '6711502234@chandra.ac.th' && (!existingAccount || existingAccount.role !== 'admin')) {
+          setErrorMessage(
+            `❌ บัญชี Google นี้ (${cleanEmail}) ไม่มีสิทธิ์ผู้ดูแลระบบ (Admin) กรุณาใช้บัญชีที่ได้รับสิทธิ์ Admin เท่านั้น`
+          );
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      if (existingAccount) {
+        // หากบัญชีนี้เคยลงทะเบียนไว้แล้ว ให้ปรับบทบาท (คุณครู/นักเรียน) ให้ตรงกับบัญชีจริงอัตโนมัติ เพื่อไม่ให้เกิด Error
+        const userEffectiveRole = existingAccount.role;
+        setRole(userEffectiveRole);
+
+        const isEffectiveTeacher = userEffectiveRole === 'teacher';
+        const cleanLevel =
+          studentLevel.startsWith('ม.') || studentLevel.startsWith('ป.')
+            ? studentLevel
+            : `ม.${studentLevel}`;
+        const cleanRoom = studentRoom.trim() || '1';
+        const cleanNo = studentNo.trim() || '1';
+        const typedStudentClass = `${cleanLevel}/${cleanRoom}`;
+        const classList = teachingClasses
+          .split(',')
+          .map((c) => c.trim())
+          .filter(Boolean);
+
+        // นำข้อมูลที่ผู้ใช้งานกรอกหน้า Login ทั้งหมดไปจำและตั้งในข้อมูลประจำตัวในบัญชี
         const restoredProfile: UserProfile = {
           ...existingAccount,
           id: `google-${cleanEmailId}`,
           name:
+            (isEffectiveTeacher ? teacherFullName.trim() : studentFullName.trim()) ||
             googleUser.name?.trim() ||
-            (isTeacher ? teacherFullName.trim() : studentFullName.trim()) ||
             existingAccount.name ||
             emailPrefix,
           avatar: googleUser.photoURL || existingAccount.avatar,
           googleEmail: cleanEmail,
           usernameOrEmail: cleanEmail,
+          role: userEffectiveRole,
+          classRoom: isEffectiveTeacher
+            ? (teachingClasses.trim() || existingAccount.classRoom || 'ทุกห้อง')
+            : (studentRoom.trim() ? typedStudentClass : existingAccount.classRoom || typedStudentClass),
+          gradeLevel: isEffectiveTeacher
+            ? undefined
+            : (studentLevel.trim() ? cleanLevel : existingAccount.gradeLevel || cleanLevel),
+          room: isEffectiveTeacher
+            ? undefined
+            : (studentRoom.trim() ? cleanRoom : existingAccount.room || cleanRoom),
+          studentNo: isEffectiveTeacher
+            ? 'คุณครู'
+            : (studentNo.trim() ? cleanNo : existingAccount.studentNo || cleanNo),
+          subjectDepartment: isEffectiveTeacher
+            ? (subjectDepartment.trim() || existingAccount.subjectDepartment || 'วิทยาศาสตร์และเทคโนโลยี')
+            : undefined,
+          teachingSubject: isEffectiveTeacher
+            ? (teachingSubject.trim() || existingAccount.teachingSubject)
+            : undefined,
+          teachingClasses: isEffectiveTeacher
+            ? (classList.length > 0 ? classList : existingAccount.teachingClasses)
+            : undefined,
         };
+
+        // จำข้อมูลที่กรอกทั้งหมดลง localStorage
+        safeSetItem('hw_box_last_login_inputs', {
+          studentFullName: studentFullName.trim() || restoredProfile.name,
+          studentLevel: cleanLevel,
+          studentRoom: cleanRoom,
+          studentNo: cleanNo,
+          teacherFullName: teacherFullName.trim() || restoredProfile.name,
+          subjectDepartment: subjectDepartment.trim(),
+          teachingSubject: teachingSubject.trim(),
+          teachingClasses: teachingClasses.trim(),
+          role: userEffectiveRole,
+        });
+
         await saveUserProfileToFirestore(restoredProfile).catch(() => {});
         safeSetItem('hw_box_saved_google_user', restoredProfile);
         safeSetItem('hw_box_user', restoredProfile);
         safeSetItem('hw_box_logged_in', 'true');
         saveDeviceGoogleAccount(restoredProfile);
         persistRegisteredUserLocally(restoredProfile);
-        setSuccessMessage(`ยินดีต้อนรับกลับมา ${restoredProfile.name} (${cleanEmail})`);
+
+        if (!isEffectiveTeacher) {
+          const { firstName, lastName } = parseThaiName(restoredProfile.name);
+          saveStudentRegistration({
+            id: restoredProfile.id,
+            registeredAt: new Date().toLocaleString('th-TH'),
+            firstName,
+            lastName,
+            fullName: restoredProfile.name,
+            studentNo: restoredProfile.studentNo || cleanNo,
+            studentIdCode: restoredProfile.studentIdCode || `STD-${cleanNo.padStart(2, '0')}`,
+            classRoom: restoredProfile.classRoom,
+          });
+        }
+
+        setSuccessMessage(`เข้าสู่ระบบสำเร็จ ยินดีต้อนรับกลับมา ${restoredProfile.name} (${roleLabel(userEffectiveRole)})`);
         triggerFestiveConfetti();
         setIsLoading(false);
         onLogin(restoredProfile);
@@ -452,7 +770,32 @@ export const LoginView: React.FC<LoginViewProps> = ({
           quizScores: existingRecord?.quizScores || {},
         };
         await saveStudentRecordToFirestore(newStudentRecord).catch(() => {});
+
+        const { firstName, lastName } = parseThaiName(userProfile.name);
+        saveStudentRegistration({
+          id: userProfile.id,
+          registeredAt: new Date().toLocaleString('th-TH'),
+          firstName,
+          lastName,
+          fullName: userProfile.name,
+          studentNo: userProfile.studentNo || studentNo || '1',
+          studentIdCode: userProfile.studentIdCode || `STD-${emailPrefix.slice(0, 6).toUpperCase()}`,
+          classRoom: userProfile.classRoom,
+        });
       }
+
+      // จำข้อมูลที่กรอกทั้งหมดลง localStorage
+      safeSetItem('hw_box_last_login_inputs', {
+        studentFullName: studentFullName.trim() || userProfile.name,
+        studentLevel: cleanLevel,
+        studentRoom: studentRoom || '1',
+        studentNo: studentNo || '1',
+        teacherFullName: teacherFullName.trim() || userProfile.name,
+        subjectDepartment: subjectDepartment.trim(),
+        teachingSubject: teachingSubject.trim(),
+        teachingClasses: teachingClasses.trim(),
+        role,
+      });
 
       setSuccessMessage(`ยินดีต้อนรับ ${userProfile.name} (${cleanEmail})`);
       triggerFestiveConfetti();
@@ -508,19 +851,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
     return () => window.removeEventListener('message', handleBridgeMessage);
   }, []);
 
-  /** เปิดหน้าต่าง Google OAuth จริงผ่านโดเมนหลักที่ได้รับอนุญาตแล้ว (สำหรับใช้งานบน GitHub Pages / Vercel) */
-  const handleOpenAuthorizedGoogleBridge = () => {
-    const bridgeUrl = `https://ais-pre-e7swubkqsfejyflxohoan5-911022666983.asia-east1.run.app/?google_auth_bridge=1`;
-    const width = 500;
-    const height = 620;
-    const left = window.screenX + (window.outerWidth - width) / 2;
-    const top = window.screenY + (window.outerHeight - height) / 2;
-    window.open(
-      bridgeUrl,
-      'TaskHubGoogleAuthBridge',
-      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
-    );
-  };
 
   /** ปุ่มหลัก: เข้าสู่ระบบด้วย Google (รองรับทุกแพลตฟอร์ม ทั้ง Web, GitHub Pages, Vercel, มือถือ และ In-App Browser) */
   const handleRealGoogleSignIn = async () => {
@@ -610,46 +940,47 @@ export const LoginView: React.FC<LoginViewProps> = ({
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-3 sm:p-6 py-8 sm:py-12 bg-[#FFFDF5] font-['JaoTomato_Thin','JaoTomato','เจ้ามะเขือเทศ','Mali',sans-serif]">
-      <div className="w-full max-w-xl mx-auto">
+    <div className="min-h-screen flex items-center justify-center p-3 sm:p-5 py-6 sm:py-8 bg-[#FFFDF5] font-['JaoTomato_Thin','JaoTomato','เจ้ามะเขือเทศ','Mali',sans-serif]">
+      <div className="w-full max-w-lg mx-auto">
         {/* หัวเรื่อง */}
-        <div className="text-center mb-6">
+        <div className="text-center mb-5">
           <div className="inline-flex flex-col items-center">
-            <h1 className="text-4xl sm:text-5xl font-black tracking-tight flex items-center justify-center">
+            <h1 className="text-3xl sm:text-4xl font-black tracking-tight flex items-center justify-center">
               <span className="text-stone-900">Task</span>
-              <span className="text-stone-900 bg-amber-400 px-3.5 py-1 rounded-2xl ml-2 shadow-[3px_3px_0px_#000] border-2 border-stone-950 font-black">
+              <span className="text-stone-900 bg-amber-400 px-3 py-1 rounded-2xl ml-2 shadow-[2px_2px_0px_#000] border-2 border-stone-950 font-black">
                 Hub
               </span>
             </h1>
-            <p className="text-sm sm:text-base text-stone-700 mt-2 font-bold">
+            <p className="text-xs sm:text-sm text-stone-600 mt-1.5 font-bold">
               ระบบสารสนเทศการจัดการการเรียนรู้สำหรับนักเรียนและคุณครู
             </p>
           </div>
         </div>
 
-        {/* แยกปุ่มเลือกบทบาทระหว่าง นักเรียน กับ คุณครู พร้อมไอคอนภาพวาดลายเส้นเด็ก */}
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-6">
+
+        {/* แยกปุ่มเลือกบทบาทระหว่าง นักเรียน คุณครู และ Admin */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 mb-4">
           <button
             type="button"
             onClick={() => {
               setRole('student');
               setErrorMessage('');
             }}
-            className={`p-3.5 sm:p-4 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-center gap-3 text-left ${
+            className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-center gap-2.5 text-left ${
               role === 'student'
-                ? 'bg-amber-400 text-stone-950 border-stone-900 shadow-[4px_4px_0px_#18181b] scale-[1.01]'
+                ? 'bg-amber-400 text-stone-950 border-stone-900 shadow-[3px_3px_0px_#18181b] scale-[1.01]'
                 : 'bg-white text-stone-700 border-stone-300 hover:border-stone-500 hover:bg-stone-50'
             }`}
           >
-            <div className="w-12 h-12 rounded-xl bg-white border-2 border-stone-900 flex items-center justify-center shrink-0 shadow-[2px_2px_0px_#000] overflow-hidden">
-              <AvatarStudentBoyGlasses className="w-11 h-11" />
+            <div className="w-10 h-10 rounded-xl bg-white border-2 border-stone-900 flex items-center justify-center shrink-0 shadow-[2px_2px_0px_#000] overflow-hidden">
+              <AvatarStudentBoyGlasses className="w-9 h-9" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-base sm:text-lg font-black flex items-center gap-1.5">
+              <div className="text-sm sm:text-base font-black flex items-center gap-1">
                 <span>สำหรับนักเรียน</span>
-                {role === 'student' && <DoodleCheck className="w-4 h-4 shrink-0" />}
+                {role === 'student' && <DoodleCheck className="w-3.5 h-3.5 shrink-0" />}
               </div>
-              <div className="text-xs font-bold opacity-80 truncate">ส่งชิ้นงาน • แบบทดสอบ</div>
+              <div className="text-[11px] font-bold opacity-80 truncate">ส่งชิ้นงาน • แบบทดสอบ</div>
             </div>
           </button>
 
@@ -659,37 +990,109 @@ export const LoginView: React.FC<LoginViewProps> = ({
               setRole('teacher');
               setErrorMessage('');
             }}
-            className={`p-3.5 sm:p-4 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-center gap-3 text-left ${
+            className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-center gap-2.5 text-left ${
               role === 'teacher'
-                ? 'bg-amber-400 text-stone-950 border-stone-900 shadow-[4px_4px_0px_#18181b] scale-[1.01]'
+                ? 'bg-amber-400 text-stone-950 border-stone-900 shadow-[3px_3px_0px_#18181b] scale-[1.01]'
                 : 'bg-white text-stone-700 border-stone-300 hover:border-stone-500 hover:bg-stone-50'
             }`}
           >
-            <div className="w-12 h-12 rounded-xl bg-white border-2 border-stone-900 flex items-center justify-center shrink-0 shadow-[2px_2px_0px_#000] overflow-hidden">
-              <AvatarTeacherFemaleGlasses className="w-11 h-11" />
+            <div className="w-10 h-10 rounded-xl bg-white border-2 border-stone-900 flex items-center justify-center shrink-0 shadow-[2px_2px_0px_#000] overflow-hidden">
+              <AvatarTeacherFemaleGlasses className="w-9 h-9" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-base sm:text-lg font-black flex items-center gap-1.5">
+              <div className="text-sm sm:text-base font-black flex items-center gap-1">
                 <span>สำหรับคุณครู</span>
-                {role === 'teacher' && <DoodleCheck className="w-4 h-4 shrink-0" />}
+                {role === 'teacher' && <DoodleCheck className="w-3.5 h-3.5 shrink-0" />}
               </div>
-              <div className="text-xs font-bold opacity-80 truncate">สั่งงาน • ตรวจการบ้าน</div>
+              <div className="text-[11px] font-bold opacity-80 truncate">สั่งงาน • ตรวจการบ้าน</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setRole('admin');
+              setErrorMessage('');
+            }}
+            className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-center gap-2.5 text-left ${
+              role === 'admin'
+                ? 'bg-amber-400 text-stone-950 border-stone-900 shadow-[3px_3px_0px_#18181b] scale-[1.01]'
+                : 'bg-white text-stone-700 border-stone-300 hover:border-stone-500 hover:bg-stone-50'
+            }`}
+          >
+            <div className="w-10 h-10 rounded-xl bg-amber-100 border-2 border-stone-900 flex items-center justify-center shrink-0 shadow-[2px_2px_0px_#000] p-1.5">
+              <DoodleShield className="w-7 h-7 text-stone-900" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm sm:text-base font-black flex items-center gap-1">
+                <span>สำหรับ Admin</span>
+                {role === 'admin' && <DoodleCheck className="w-3.5 h-3.5 shrink-0" />}
+              </div>
+              <div className="text-[11px] font-bold opacity-80 truncate">ดูแลระบบ • รูปแบบสนทนา</div>
             </div>
           </button>
         </div>
 
-        <div className="bg-white border-2 border-stone-900 rounded-3xl p-5 sm:p-8 shadow-[6px_6px_0px_#18181b]">
+        <div className="bg-white border-2 border-stone-900 rounded-3xl p-5 sm:p-6 shadow-[5px_5px_0px_#18181b]">
           {errorMessage && (
-            <div className="mb-4 p-3.5 bg-red-50 border-2 border-red-300 text-red-700 rounded-xl text-sm font-bold flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 shrink-0 text-red-500" />
-              <span>{errorMessage}</span>
+            <div className="mb-4 p-4 bg-red-50 border-2 border-red-300 text-red-800 rounded-2xl text-sm font-bold space-y-2 shadow-xs animate-in fade-in">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-5 h-5 shrink-0 text-red-500 mt-0.5" />
+                  <span className="leading-relaxed">{errorMessage}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setErrorMessage('')}
+                  className="text-red-500 hover:text-red-800 font-black px-1 cursor-pointer"
+                  title="ปิดการแจ้งเตือน"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-red-200 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErrorMessage('');
+                    setShowCustomEmailInput(true);
+                    setIsGooglePickerOpen(true);
+                  }}
+                  className="px-3 py-1.5 bg-white border border-red-400 hover:bg-red-100 text-red-900 rounded-lg cursor-pointer font-bold shadow-2xs transition-colors"
+                >
+                  ✉️ เข้าสู่ระบบด้วยอีเมลโดยตรง (ไม่ต้องใช้ Pop-up)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem('hw_box_saved_google_user');
+                    localStorage.removeItem('hw_box_logged_in');
+                    localStorage.removeItem('hw_box_user');
+                    setErrorMessage('');
+                    setSuccessMessage('ล้างข้อมูลเซสชันเก่าในเครื่องเรียบร้อยแล้ว กรุณากดเข้าสู่ระบบใหม่อีกครั้ง');
+                    setTimeout(() => setSuccessMessage(''), 4500);
+                  }}
+                  className="px-3 py-1.5 bg-stone-100 border border-stone-300 hover:bg-stone-200 text-stone-700 rounded-lg cursor-pointer font-bold transition-colors"
+                >
+                  🔄 ล้างเซสชันเก่าในเครื่อง
+                </button>
+              </div>
             </div>
           )}
 
           {successMessage && (
-            <div className="mb-4 p-3.5 bg-emerald-50 border-2 border-emerald-300 text-emerald-800 rounded-xl text-sm font-bold flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600" />
-              <span>{successMessage}</span>
+            <div className="mb-4 p-3.5 bg-emerald-50 border-2 border-emerald-300 text-emerald-800 rounded-xl text-sm font-bold flex items-center justify-between gap-2 shadow-xs animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600" />
+                <span>{successMessage}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSuccessMessage('')}
+                className="text-emerald-700 hover:text-emerald-950 font-black px-1 cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
           )}
 
@@ -791,7 +1194,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 </button>
               </form>
             </div>
-          ) : (
+          ) : role === 'teacher' ? (
             /* ========================================================
                สำหรับคุณครู (Teacher Portal)
                ======================================================== */
@@ -852,7 +1255,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm sm:text-base font-black text-stone-800 mb-1">
-                      วิชาที่สอน (ระบุภายหลังได้)
+                      วิชาที่สอน
                     </label>
                     <input
                       type="text"
@@ -865,7 +1268,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
                   <div>
                     <label className="block text-sm sm:text-base font-black text-stone-800 mb-1">
-                      ชั้นเรียนที่สอน (คั่นด้วยจุลภาค)
+                      ชั้นเรียนที่สอน
                     </label>
                     <input
                       type="text"
@@ -887,10 +1290,115 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 </button>
               </form>
             </div>
+          ) : (
+            /* ========================================================
+               สำหรับ Admin (Admin Portal)
+               ======================================================== */
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b-2 border-stone-200">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-amber-200 border-2 border-stone-900 flex items-center justify-center text-xl shadow-[2px_2px_0px_#000]">
+                    🛡️
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-stone-900">
+                      เข้าสู่ระบบผู้ดูแลระบบ (Admin)
+                    </h2>
+                    <p className="text-xs font-bold text-stone-500">
+                      จัดการรูปแบบการสนทนา บัญชีผู้ใช้ และตั้งค่าระบบ TaskHub
+                    </p>
+                  </div>
+                </div>
+                <span className="px-3 py-1 bg-stone-900 text-amber-300 rounded-full text-xs font-black border border-stone-800">
+                  ADMIN
+                </span>
+              </div>
+
+              <form onSubmit={handleAdminSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm sm:text-base font-black text-stone-800 mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <User className="w-4 h-4 text-amber-600" />
+                      <span>ชื่อผู้ใช้ (Username)</span>
+                    </span>
+                    <span className="text-rose-500 font-bold">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={adminUsername}
+                    onChange={(e) => setAdminUsername(e.target.value)}
+                    placeholder="เช่น admin หรือชื่อผู้ใช้ระบบ"
+                    className="w-full px-4 py-3 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-stone-900 focus:bg-white text-base font-bold font-mono"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm sm:text-base font-black text-stone-800 mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Lock className="w-4 h-4 text-amber-600" />
+                      <span>รหัสผ่าน (Password)</span>
+                    </span>
+                    <span className="text-rose-500 font-bold">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showAdminPassword ? 'text' : 'password'}
+                      value={adminPassword}
+                      onChange={(e) => setAdminPassword(e.target.value)}
+                      placeholder="รหัสผ่านผู้ดูแลระบบ (เริ่มต้น: admin123)"
+                      className="w-full pl-4 pr-12 py-3 bg-stone-50 border-2 border-stone-300 rounded-xl focus:border-stone-900 focus:bg-white text-base font-bold font-mono"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-800 p-1 cursor-pointer transition-colors"
+                      title={showAdminPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
+                    >
+                      {showAdminPassword ? (
+                        <EyeOff className="w-5 h-5" />
+                      ) : (
+                        <Eye className="w-5 h-5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* กล่องข้อความแนะนำบัญชีเริ่มต้น */}
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs font-medium text-stone-700 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>
+                      เข้าสู่ระบบเริ่มต้น: <code className="font-bold text-stone-900 bg-amber-100 px-1 py-0.5 rounded">admin</code> / รหัสผ่าน: <code className="font-bold text-stone-900 bg-amber-100 px-1 py-0.5 rounded">admin123</code>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminUsername('admin');
+                      setAdminPassword('admin123');
+                    }}
+                    className="shrink-0 text-[11px] font-bold text-amber-900 underline hover:text-amber-950 cursor-pointer"
+                  >
+                    กรอกให้อัตโนมัติ
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full py-3.5 px-5 bg-stone-900 hover:bg-stone-800 active:translate-y-0.5 text-amber-300 text-base sm:text-lg font-black rounded-xl border-2 border-stone-900 shadow-[3px_3px_0px_#18181b] flex items-center justify-center gap-2 cursor-pointer transition-all"
+                >
+                  <DoodleShield className="w-5 h-5 text-amber-400" />
+                  <span>เข้าสู่ระบบผู้ดูแลระบบ (Admin)</span>
+                </button>
+              </form>
+            </div>
           )}
 
           {/* ปุ่มเข้าสู่ระบบด้วย Google */}
-          <div className="mt-4 pt-4 border-t border-stone-200">
+          <div className="mt-4 pt-4 border-t border-stone-200 space-y-2">
             <button
               type="button"
               onClick={handleRealGoogleSignIn}
@@ -909,11 +1417,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 </>
               )}
             </button>
+
           </div>
 
-          <div className="mt-5 pt-4 border-t border-amber-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-center">
-            <div className="inline-flex items-center gap-1.5 text-xs sm:text-sm text-stone-600 font-bold">
-              <DoodleShield className="w-4 h-4 shrink-0" />
+          <div className="mt-4 pt-3 border-t border-amber-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-center">
+            <div className="inline-flex items-center gap-1.5 text-xs text-stone-600 font-bold">
+              <DoodleShield className="w-3.5 h-3.5 shrink-0" />
               <span>รองรับบัญชี @gmail.com และบัญชีสถานศึกษา</span>
             </div>
 
@@ -921,16 +1430,16 @@ export const LoginView: React.FC<LoginViewProps> = ({
               <button
                 type="button"
                 onClick={onOpenCloudModal}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-100 hover:bg-sky-200 border-2 border-stone-900 text-stone-900 text-xs font-black shadow-[2px_2px_0px_#18181b] cursor-pointer transition-all"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-sky-100 hover:bg-sky-200 border-2 border-stone-900 text-stone-900 text-xs font-black shadow-[2px_2px_0px_#18181b] cursor-pointer transition-all"
               >
-                <DoodleCloud className="w-4 h-4" />
+                <DoodleCloud className="w-3.5 h-3.5" />
                 <span>ตั้งค่า Firebase &amp; GitHub</span>
               </button>
             )}
           </div>
         </div>
 
-        <div className="text-center mt-6 text-sm text-stone-600 font-bold">
+        <div className="text-center mt-5 text-xs text-stone-600 font-bold">
           TaskHub • ระบบสารสนเทศการเรียนรู้ (เชื่อมต่อฐานข้อมูล Cloud Firestore จริง)
         </div>
       </div>
@@ -1098,14 +1607,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
                     {/* ตัวเลือกเสริมสำหรับโดเมน GitHub / Vercel */}
                     {isUnauthorizedDomain && (
                       <div className="pt-3 border-t border-stone-200 space-y-2">
-                        <button
-                          type="button"
-                          onClick={handleOpenAuthorizedGoogleBridge}
-                          className="w-full py-2.5 px-3 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-medium flex items-center justify-center gap-2 cursor-pointer transition-colors"
-                        >
-                          <GoogleIcon className="w-4 h-4 shrink-0" />
-                          <span>เปิดหน้าต่างป๊อปอัป Google จริง (ผ่าน Cloud Auth Bridge)</span>
-                        </button>
 
                         <button
                           type="button"

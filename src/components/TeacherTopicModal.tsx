@@ -14,6 +14,16 @@ export const ASSESSMENT_OPTIONS: {
   cardActiveClass: string;
 }[] = [
   {
+    type: 'คำถามชวนคิดทั่วไป',
+    thaiSubtitle: 'คำถามชวนคิด / ชวนคุยประจำคาบเรียน',
+    description: 'ตั้งประเด็นคำถามปลายเปิดหรือข้อคิดเห็น เพื่อให้นักเรียนร่วมตอบและแลกเปลี่ยน',
+    defaultTitle: 'คำถามชวนคิดประจำคาบเรียน',
+    defaultPrompt:
+      'จากบทเรียนในวันนี้ นักเรียนมีข้อคิดเห็น ความรู้สึก หรือสิ่งที่อยากแบ่งปันกับคุณครูและเพื่อนๆ อย่างไรบ้าง?',
+    badgeClass: 'bg-purple-200 text-purple-950 border-zinc-900',
+    cardActiveClass: 'bg-purple-100 border-zinc-900 shadow-[3px_3px_0px_#18181b]',
+  },
+  {
     type: 'Assessment as Learning',
     thaiSubtitle: 'การประเมินเพื่อพัฒนาการเรียนรู้ด้วยตนเอง',
     description: 'ให้นักเรียนทบทวน สะท้อนคิด และประเมินกระบวนการเรียนรู้ของตนเอง',
@@ -60,9 +70,9 @@ export const TeacherTopicModal: React.FC<TeacherTopicModalProps> = ({
   currentUser,
   onSaveTopic,
   initialTopic,
-  initialAssessmentType = 'Assessment as Learning',
+  initialAssessmentType = 'คำถามชวนคิดทั่วไป',
 }) => {
-  const [assessmentType, setAssessmentType] = useState<AssessmentType>('Assessment as Learning');
+  const [assessmentType, setAssessmentType] = useState<AssessmentType>('คำถามชวนคิดทั่วไป');
   const [title, setTitle] = useState('');
   const [promptQuestion, setPromptQuestion] = useState('');
   const [targetClass, setTargetClass] = useState('ทุกห้อง');
@@ -162,14 +172,14 @@ export const TeacherTopicModal: React.FC<TeacherTopicModalProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-xl font-black text-zinc-900">
-                {initialTopic ? 'แก้ไขโพสต์หัวข้อสะท้อนคิด' : 'โพสต์หัวข้อในมุมสะท้อน'}
+                {initialTopic ? 'แก้ไขคำถามมุมสะท้อนความคิด' : 'โพสต์มุมสะท้อนความคิด'}
               </h3>
               <span className="bg-purple-200 text-purple-950 font-black text-[10px] px-2.5 py-0.5 rounded-full border border-zinc-900">
                 คุณครู
               </span>
             </div>
             <p className="text-xs font-semibold text-zinc-600 mt-0.5">
-              เลือกหัวข้อการประเมิน (Assessment) และตั้งประเด็นคำถามเพื่อให้นักเรียนร่วมสะท้อนคิด
+              พิมพ์คำถามและเลือกหัวข้อต่างๆ เพื่อให้นักเรียนในชั้นเรียนร่วมตอบและสะท้อนความคิด
             </p>
           </div>
         </div>
@@ -365,7 +375,7 @@ export const TeacherTopicModal: React.FC<TeacherTopicModalProps> = ({
               className="px-5 py-2.5 bg-purple-400 hover:bg-purple-500 text-zinc-950 text-xs md:text-sm font-black rounded-xl sketch-btn flex items-center gap-2 cursor-pointer shadow-[3px_3px_0px_#18181b]"
             >
               <Send className="w-4 h-4" />
-              <span>{initialTopic ? 'บันทึกการแก้ไข' : 'โพสต์หัวข้อให้นักเรียนตอบ'}</span>
+              <span>{initialTopic ? 'บันทึกการแก้ไขคำถาม' : 'โพสต์คำถามให้นักเรียนตอบ'}</span>
             </button>
           </div>
         </form>

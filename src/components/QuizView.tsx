@@ -74,6 +74,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingQuiz, setEditingQuiz] = useState<QuizLesson | null>(null);
   const [deletingQuiz, setDeletingQuiz] = useState<{ id: string; title: string } | null>(null);
+  const [deleteNotice, setDeleteNotice] = useState<string>('');
   const [isGoogleSheetsModalOpen, setIsGoogleSheetsModalOpen] = useState<boolean>(false);
 
   const isTeacher = currentUser.role === 'teacher';
@@ -112,7 +113,10 @@ export const QuizView: React.FC<QuizViewProps> = ({
 
   const handleConfirmDeleteQuiz = () => {
     if (deletingQuiz && onDeleteLesson) {
+      const deletedTitle = deletingQuiz.title;
       onDeleteLesson(deletingQuiz.id);
+      setDeleteNotice(`ลบชุดแบบทดสอบ "${deletedTitle || 'ชุดแบบทดสอบ'}" ออกจากระบบเรียบร้อยแล้ว`);
+      setTimeout(() => setDeleteNotice(''), 4500);
     }
     setDeletingQuiz(null);
   };
@@ -232,6 +236,24 @@ export const QuizView: React.FC<QuizViewProps> = ({
   if (isTeacher && !activeLesson) {
     return (
       <div className="space-y-6">
+        {/* Delete notification toast/banner */}
+        {deleteNotice && (
+          <div className="p-3.5 bg-emerald-100 border-2 border-emerald-600 rounded-xl text-emerald-950 font-bold text-xs flex items-center justify-between shadow-[2px_2px_0px_#000] animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>{deleteNotice}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDeleteNotice('')}
+              className="text-emerald-800 hover:text-emerald-950 font-black cursor-pointer px-1 text-sm"
+              title="ปิดการแจ้งเตือน"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Banner */}
         <div className="bg-[#E0F2FE] sketch-border rounded-[22px_14px_24px_16px] p-5 md:p-6 shadow-[5px_5px_0px_#18181b] relative overflow-hidden">
           <div className="washi-tape -top-2 left-10 rotate-[-3deg] bg-amber-200" />
@@ -617,13 +639,28 @@ export const QuizView: React.FC<QuizViewProps> = ({
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setInspectingQuestionLesson(null)}
-                  className="w-8 h-8 rounded-full bg-rose-200 hover:bg-rose-300 border-2 border-zinc-900 flex items-center justify-center font-bold text-zinc-900 cursor-pointer"
-                >
-                  ✕
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const lessonToDel = inspectingQuestionLesson;
+                      setInspectingQuestionLesson(null);
+                      handleDeleteQuizWithConfirm(lessonToDel.id, lessonToDel.title);
+                    }}
+                    className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg border border-rose-300 cursor-pointer flex items-center gap-1 text-xs font-bold transition-colors"
+                    title="ลบชุดข้อสอบนี้"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>ลบชุดข้อสอบ</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInspectingQuestionLesson(null)}
+                    className="w-8 h-8 rounded-full bg-rose-200 hover:bg-rose-300 border-2 border-zinc-900 flex items-center justify-center font-bold text-zinc-900 cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-4">
@@ -701,9 +738,23 @@ export const QuizView: React.FC<QuizViewProps> = ({
           isOpen={isEditorOpen}
           onClose={() => setIsEditorOpen(false)}
           onSave={handleSaveQuiz}
-          onDelete={handleDeleteQuizWithConfirm}
+          onDelete={(id) => {
+            const found = lessons.find((l) => l.id === id);
+            handleDeleteQuizWithConfirm(id, found?.title);
+          }}
           initialQuiz={editingQuiz}
           authorName={currentUser.name}
+        />
+
+        {/* Confirm Delete Quiz Modal (Teacher View) */}
+        <ConfirmDeleteModal
+          isOpen={deletingQuiz !== null}
+          title="ยืนยันการลบชุดแบบทดสอบ"
+          itemName={deletingQuiz?.title}
+          itemType="ชุดแบบทดสอบ"
+          description="เมื่อลบแล้ว ชุดคำถามและแบบทดสอบนี้จะถูกนำออกจากระบบทันที"
+          onConfirm={handleConfirmDeleteQuiz}
+          onClose={() => setDeletingQuiz(null)}
         />
       </div>
     );

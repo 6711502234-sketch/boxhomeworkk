@@ -12,6 +12,7 @@ interface HeaderProps {
   onLogout: () => void;
   onOpenGoogleSheets?: () => void;
   onOpenProfileModal?: () => void;
+  onOpenAdminProfile?: () => void;
   onOpenCloudModal?: () => void;
 }
 
@@ -20,6 +21,7 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   onOpenGoogleSheets,
   onOpenProfileModal,
+  onOpenAdminProfile,
   onOpenCloudModal,
 }) => {
   return (
@@ -39,29 +41,31 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* User Info & Role Actions */}
         <div className="flex flex-wrap items-center justify-center md:justify-end gap-2.5 w-full md:w-auto">
-          {/* Star Balance Pill - Doodle Style */}
-          <div className="flex items-center gap-2.5 bg-[#FFFDF5] px-3.5 py-2 rounded-xl border border-amber-300 shadow-xs">
-            <div className="w-8 h-8 rounded-lg bg-amber-100 border border-amber-300 flex items-center justify-center shadow-xs">
-              <DoodleStar className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-amber-950 uppercase tracking-wider">
-                ดาวสะสม
+          {/* Star Balance Pill - Doodle Style (Hidden for Admin) */}
+          {user.role !== 'admin' && (
+            <div className="flex items-center gap-2.5 bg-[#FFFDF5] px-3.5 py-2 rounded-xl border border-amber-300 shadow-xs">
+              <div className="w-8 h-8 rounded-lg bg-amber-100 border border-amber-300 flex items-center justify-center shadow-xs">
+                <DoodleStar className="w-6 h-6" />
               </div>
-              <div className="text-xl md:text-2xl font-bold text-stone-900 leading-none">
-                {user.totalStars}{' '}
-                <span className="text-xs font-normal text-amber-700">ดวง</span>
+              <div>
+                <div className="text-xs font-bold text-amber-950 uppercase tracking-wider">
+                  ดาวสะสม
+                </div>
+                <div className="text-xl md:text-2xl font-bold text-stone-900 leading-none">
+                  {user.totalStars}{' '}
+                  <span className="text-xs font-normal text-amber-700">ดวง</span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* User Profile Badge with Edit Avatar Action - Flat Icon Style */}
           <div className="flex items-center gap-2.5 bg-white pl-3 pr-3.5 py-2 rounded-xl border border-amber-300 text-left shadow-xs">
             <button
               type="button"
-              onClick={onOpenProfileModal}
+              onClick={user.role === 'admin' ? (onOpenAdminProfile || onOpenProfileModal) : onOpenProfileModal}
               className="relative shrink-0 cursor-pointer group/avatar transition-transform hover:scale-105 active:scale-95"
-              title="คลิกเพื่อจัดการ Profile"
+              title={user.role === 'admin' ? 'คลิกเพื่อแก้ไขข้อมูลส่วนตัว Admin' : 'คลิกเพื่อจัดการ Profile'}
             >
               <AvatarDisplay avatar={user.avatar} className="w-10 h-10" />
               <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-amber-400 text-stone-900 rounded-full border border-white flex items-center justify-center text-[9px] shadow-xs group-hover/avatar:bg-amber-500">
@@ -75,15 +79,26 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
                 <span
                   className={`text-xs font-bold px-2 py-0.5 rounded ${
-                    user.role === 'teacher'
+                    user.role === 'admin'
+                      ? 'bg-stone-900 text-amber-300 font-black border border-stone-800'
+                      : user.role === 'teacher'
                       ? 'bg-amber-400 text-stone-900 font-bold'
                       : 'bg-amber-100 text-amber-950 border border-amber-300 font-bold'
                   }`}
                 >
-                  {user.role === 'teacher' ? 'คุณครู' : user.classRoom}
+                  {user.role === 'admin' ? '🛡️ Admin' : user.role === 'teacher' ? 'คุณครู' : user.classRoom}
                 </span>
 
-                {onOpenProfileModal && (
+                {user.role === 'admin' ? (
+                  <button
+                    type="button"
+                    onClick={onOpenAdminProfile || onOpenProfileModal}
+                    className="text-xs font-bold text-amber-950 hover:text-stone-950 bg-amber-200 hover:bg-amber-300 px-2 py-0.5 rounded-lg border border-amber-400 cursor-pointer ml-1 shrink-0 shadow-2xs transition-colors flex items-center gap-1"
+                    title="แก้ไขข้อมูลส่วนตัว Admin"
+                  >
+                    <span>ข้อมูลส่วนตัว Admin</span>
+                  </button>
+                ) : onOpenProfileModal ? (
                   <button
                     type="button"
                     onClick={onOpenProfileModal}
@@ -92,7 +107,7 @@ export const Header: React.FC<HeaderProps> = ({
                   >
                     เปลี่ยนรูป
                   </button>
-                )}
+                ) : null}
               </div>
               <div className="text-xs font-medium text-stone-600 flex items-center gap-1.5 mt-0.5">
                 {user.googleEmail ? (

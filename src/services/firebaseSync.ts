@@ -18,6 +18,8 @@ import {
   StudentRecord,
   StudentExamScore,
   QuizLesson,
+  WhiteboardSession,
+  WhiteboardMessage,
 } from '../types';
 
 export enum OperationType {
@@ -69,12 +71,6 @@ export function handleFirestoreError(
     path,
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  if (
-    error instanceof Error &&
-    error.message.toLowerCase().includes('missing or insufficient permissions')
-  ) {
-    throw new Error(JSON.stringify(errInfo));
-  }
 }
 
 /**
@@ -105,6 +101,8 @@ export const REFLECTIONS_COLLECTION = 'reflectionTopics';
 export const STUDENT_RECORDS_COLLECTION = 'studentRecords';
 export const EXAM_SCORES_COLLECTION = 'examScores';
 export const LESSONS_COLLECTION = 'quizLessons';
+export const WHITEBOARD_SESSIONS_COLLECTION = 'whiteboardSessions';
+export const WHITEBOARD_MESSAGES_COLLECTION = 'whiteboardMessages';
 
 /**
  * Delete a document from Firestore collection
@@ -547,6 +545,86 @@ export function subscribeToReflectionsFromFirestore(onUpdate: (topics: TeacherRe
       },
       (err) => {
         handleFirestoreError(err, OperationType.LIST, REFLECTIONS_COLLECTION);
+      }
+    );
+  } catch (e) {
+    console.warn('Firestore subscribe error:', e);
+    return () => {};
+  }
+}
+
+/**
+ * Save or update whiteboard session in Firestore
+ */
+export async function saveWhiteboardSessionToFirestore(session: WhiteboardSession): Promise<void> {
+  try {
+    const docRef = doc(db, WHITEBOARD_SESSIONS_COLLECTION, session.id);
+    await setDoc(docRef, sanitizeForFirestore(session), { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `${WHITEBOARD_SESSIONS_COLLECTION}/${session.id}`);
+  }
+}
+
+/**
+ * Real-time listener for whiteboard sessions
+ */
+export function subscribeToWhiteboardSessionsFromFirestore(onUpdate: (sessions: WhiteboardSession[]) => void) {
+  try {
+    const q = query(collection(db, WHITEBOARD_SESSIONS_COLLECTION));
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const sessions: WhiteboardSession[] = [];
+        snapshot.forEach((docSnap) => {
+          sessions.push(docSnap.data() as WhiteboardSession);
+        });
+        const hasRemovals = snapshot.docChanges().some((c) => c.type === 'removed');
+        if (sessions.length > 0 || hasRemovals) {
+          onUpdate(sessions);
+        }
+      },
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, WHITEBOARD_SESSIONS_COLLECTION);
+      }
+    );
+  } catch (e) {
+    console.warn('Firestore subscribe error:', e);
+    return () => {};
+  }
+}
+
+/**
+ * Save whiteboard message to Firestore
+ */
+export async function saveWhiteboardMessageToFirestore(message: WhiteboardMessage): Promise<void> {
+  try {
+    const docRef = doc(db, WHITEBOARD_MESSAGES_COLLECTION, message.id);
+    await setDoc(docRef, sanitizeForFirestore(message), { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `${WHITEBOARD_MESSAGES_COLLECTION}/${message.id}`);
+  }
+}
+
+/**
+ * Real-time listener for whiteboard messages
+ */
+export function subscribeToWhiteboardMessagesFromFirestore(onUpdate: (messages: WhiteboardMessage[]) => void) {
+  try {
+    const q = query(collection(db, WHITEBOARD_MESSAGES_COLLECTION));
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const messages: WhiteboardMessage[] = [];
+        snapshot.forEach((docSnap) => {
+          messages.push(docSnap.data() as WhiteboardMessage);
+        });
+        const hasRemovals = snapshot.docChanges().some((c) => c.type === 'removed');
+        if (messages.length > 0 || hasRemovals) {
+          onUpdate(messages);
+        }
+      },
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, WHITEBOARD_MESSAGES_COLLECTION);
       }
     );
   } catch (e) {

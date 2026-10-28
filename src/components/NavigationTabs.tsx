@@ -6,13 +6,28 @@ import {
   DoodleTrophy,
   DoodleReflectionChat,
   DoodleChart,
+  DoodleShield,
 } from './DoodleIcons';
+import {
+  Users,
+  BookOpen,
+  Layers,
+  FileText,
+  Award,
+  CheckSquare,
+  MessageSquare,
+  Printer,
+  Sparkles,
+  BarChart3,
+  Star,
+} from 'lucide-react';
 
 interface NavigationTabsProps {
   activeTab: ActiveTab;
   onSelectTab: (tab: ActiveTab) => void;
   userRole: UserRole;
   pendingHomeworkCount?: number;
+  hasActiveReflectionLive?: boolean;
 }
 
 export const NavigationTabs: React.FC<NavigationTabsProps> = ({
@@ -20,49 +35,87 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
   onSelectTab,
   userRole,
   pendingHomeworkCount = 0,
+  hasActiveReflectionLive = false,
 }) => {
-  const tabs = [
+  // -------------------------------------------------------------
+  // 1. ADMIN MAIN MENU (Admin ใช้แบนเนอร์ศูนย์ควบคุมและแถบเมนูใน AdminView เป็นเมนูหลักด้านบนสุดโดยตรง)
+  // -------------------------------------------------------------
+  if (userRole === 'admin') {
+    return null;
+  }
+
+  // -------------------------------------------------------------
+  // 2. TEACHER & STUDENT TABS (ครูจะไม่มีเมนู Admin จัดการระบบอีกต่อไป)
+  // -------------------------------------------------------------
+  const isTeacher = userRole === 'teacher';
+
+  const regularTabs: {
+    id: ActiveTab;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    badge: string;
+    isLiveAlert: boolean;
+  }[] = [
     {
-      id: 'homework' as ActiveTab,
+      id: 'homework',
       label: 'เพิ่มชิ้นงาน',
       icon: DoodleHomework,
-      badge: userRole === 'teacher' 
-        ? (pendingHomeworkCount > 0 ? `${pendingHomeworkCount} รอตรวจ` : 'โพสต์ & ตรวจงาน') 
+      badge: isTeacher
+        ? pendingHomeworkCount > 0
+          ? `${pendingHomeworkCount} รอตรวจ`
+          : 'โพสต์ & ตรวจงาน'
         : 'รับมอบหมายงาน',
+      isLiveAlert: false,
     },
     {
-      id: 'quiz' as ActiveTab,
+      id: 'quiz',
       label: 'แบบทดสอบ',
       icon: DoodleQuizBulb,
-      badge: userRole === 'teacher' ? 'ดูคะแนนนักเรียน' : '2 บทเรียน',
+      badge: isTeacher ? 'ดูคะแนนนักเรียน' : '2 บทเรียน',
+      isLiveAlert: false,
     },
     {
-      id: 'scorebook' as ActiveTab,
+      id: 'scorebook',
       label: 'สมุดคะแนน',
       icon: DoodleTrophy,
-      badge: userRole === 'teacher' ? 'ให้สติกเกอร์' : 'เกียรติยศ',
+      badge: isTeacher ? 'ให้สติกเกอร์' : 'เกียรติยศ',
+      isLiveAlert: false,
     },
     {
-      id: 'reflection' as ActiveTab,
-      label: 'มุมสะท้อน',
+      id: 'reflection',
+      label: 'มุมสะท้อนความคิด',
       icon: DoodleReflectionChat,
-      badge: userRole === 'teacher' ? 'อ่านเสียงสะท้อน' : '+20 ดาว',
+      badge: isTeacher
+        ? hasActiveReflectionLive
+          ? '🟢 เปิดสนทนาสด'
+          : 'กระดานสนทนา'
+        : hasActiveReflectionLive
+        ? '🔴 สนทนาสด!'
+        : 'กระดานสนทนา',
+      isLiveAlert: userRole === 'student' && hasActiveReflectionLive,
     },
-    ...(userRole === 'teacher'
+    ...(isTeacher
       ? [
           {
             id: 'dashboard' as ActiveTab,
             label: 'Dashboard',
             icon: DoodleChart,
             badge: 'กราฟประเมิน',
+            isLiveAlert: false,
           },
         ]
       : []),
   ];
 
   return (
-    <nav className={`grid ${userRole === 'teacher' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5' : 'grid-cols-2 md:grid-cols-4'} gap-2 sm:gap-3 w-full mb-6`}>
-      {tabs.map((tab) => {
+    <nav
+      className={`grid ${
+        isTeacher
+          ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5'
+          : 'grid-cols-2 md:grid-cols-4'
+      } gap-2 sm:gap-3 w-full mb-6`}
+    >
+      {regularTabs.map((tab) => {
         const isActive = activeTab === tab.id;
         const IconComp = tab.icon;
         return (
@@ -77,16 +130,26 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
             }`}
           >
             <IconComp className="w-6 h-6 shrink-0" />
-            <span className="tracking-tight text-center truncate font-bold text-base sm:text-lg md:text-xl">{tab.label}</span>
+            <span className="tracking-tight text-center truncate font-bold text-base sm:text-lg md:text-xl">
+              {tab.label}
+            </span>
             {tab.badge && (
               <span
-                className={`text-xs sm:text-sm font-semibold px-2.5 py-0.5 rounded-full border shrink-0 whitespace-nowrap ${
-                  isActive
+                className={`text-xs sm:text-sm font-bold px-2.5 py-0.5 rounded-full border shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 transition-all ${
+                  tab.isLiveAlert
+                    ? 'bg-rose-500 text-white border-rose-600 shadow-sm animate-pulse ring-2 ring-rose-300'
+                    : isActive
                     ? 'bg-white text-stone-900 border-amber-300 shadow-2xs'
                     : 'bg-amber-50 text-amber-900 border border-amber-200'
                 }`}
               >
-                {tab.badge}
+                {tab.isLiveAlert && (
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-90"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                  </span>
+                )}
+                <span>{tab.badge}</span>
               </span>
             )}
           </button>
@@ -95,5 +158,3 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
     </nav>
   );
 };
-
-

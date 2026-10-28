@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { UserProfile, UserRole } from '../types';
 import { UserCheck, GraduationCap, X, Sparkles, Check } from 'lucide-react';
-import { DoodleStudent, DoodleTeacher } from './DoodleIcons';
+import { DoodleStudent, DoodleTeacher, DoodleShield } from './DoodleIcons';
 
 interface RoleSwitchModalProps {
   isOpen: boolean;
@@ -10,7 +10,7 @@ interface RoleSwitchModalProps {
   onSaveProfile: (profile: UserProfile) => void;
 }
 
-const AVATAR_OPTIONS = ['🧑‍🎓', '👩‍🎓', '🦊', '🐱', '🐶', '🐼', '🤖', '🚀', '⭐', '👾', '🦁', '🦉'];
+const AVATAR_OPTIONS = ['🧑‍🎓', '👩‍🎓', '🦊', '🐱', '🐶', '🐼', '🤖', '🚀', '⭐', '👾', '🦁', '🦉', '🛡️', '👨‍💻', '👩‍🏫'];
 
 export const RoleSwitchModal: React.FC<RoleSwitchModalProps> = ({
   isOpen,
@@ -28,10 +28,15 @@ export const RoleSwitchModal: React.FC<RoleSwitchModalProps> = ({
 
   const handleSelectRole = (newRole: UserRole) => {
     setRole(newRole);
-    if (newRole === 'teacher' && name === 'เด็กชายสมชาย สายวิทย์') {
+    if (newRole === 'admin') {
+      if (name.includes('สมชาย') || !name) {
+        setName('ผู้ดูแลระบบ TaskHub');
+      }
+      setAvatar('🛡️');
+    } else if (newRole === 'teacher' && (name.includes('สมชาย') || name.includes('Admin') || name.includes('ผู้ดูแล'))) {
       setName('คุณครูนิภาภรณ์ ใจดี');
       setAvatar('👩‍🏫');
-    } else if (newRole === 'student' && name.includes('ครู')) {
+    } else if (newRole === 'student' && (name.includes('ครู') || name.includes('Admin') || name.includes('ผู้ดูแล'))) {
       setName('เด็กชายสมชาย สายวิทย์');
       setAvatar('🧑‍🎓');
     }
@@ -41,7 +46,7 @@ export const RoleSwitchModal: React.FC<RoleSwitchModalProps> = ({
     onSaveProfile({
       ...currentUser,
       role,
-      name: name.trim() || (role === 'teacher' ? 'คุณครู' : 'นักเรียน'),
+      name: name.trim() || (role === 'admin' ? 'ผู้ดูแลระบบ' : role === 'teacher' ? 'คุณครู' : 'นักเรียน'),
       classRoom,
       studentNo,
       avatar,
@@ -51,7 +56,7 @@ export const RoleSwitchModal: React.FC<RoleSwitchModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="bg-[#FFFDF5] sketch-border-lg rounded-[24px_16px_28px_18px] p-6 md:p-8 max-w-lg w-full relative animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-[#FFFDF5] sketch-border-lg rounded-[24px_16px_28px_18px] p-6 md:p-8 max-w-xl w-full relative animate-in fade-in zoom-in-95 duration-200">
         {/* Washi Tape */}
         <div className="washi-tape -top-3 left-1/2 -translate-x-1/2 bg-amber-300" />
 
@@ -72,16 +77,16 @@ export const RoleSwitchModal: React.FC<RoleSwitchModalProps> = ({
             ระบบสลับสถานะและโปรไฟล์ผู้ใช้งาน
           </h2>
           <p className="text-sm font-semibold text-zinc-600 mt-1">
-            เลือกบทบาทเพื่อทดสอบการใช้งานระบบ TaskHub ม.3
+            เลือกบทบาทเพื่อทดสอบการใช้งานระบบ TaskHub (นักเรียน, ครู หรือ Admin)
           </p>
         </div>
 
         {/* Role Toggle Cards */}
-        <div className="grid grid-cols-2 gap-3.5 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
           <button
             type="button"
             onClick={() => handleSelectRole('student')}
-            className={`p-4 rounded-[18px_12px_16px_14px] text-left border-3 cursor-pointer transition-all ${
+            className={`p-3.5 rounded-[18px_12px_16px_14px] text-left border-3 cursor-pointer transition-all ${
               role === 'student'
                 ? 'bg-emerald-100 border-zinc-900 shadow-[4px_4px_0px_#18181b] scale-[1.02]'
                 : 'bg-white border-zinc-300 opacity-70 hover:opacity-100'
@@ -97,16 +102,16 @@ export const RoleSwitchModal: React.FC<RoleSwitchModalProps> = ({
                 </span>
               )}
             </div>
-            <div className="font-black text-zinc-900 text-base">นักเรียน ม.3</div>
-            <div className="text-xs font-semibold text-zinc-600">
-              ส่งการบ้าน • ทำควิซ • ประเมินครู • สะสมดาว
+            <div className="font-black text-zinc-900 text-sm sm:text-base">นักเรียน</div>
+            <div className="text-[11px] font-semibold text-zinc-600 mt-0.5">
+              ส่งการบ้าน • ทำควิซ • สนทนาสด
             </div>
           </button>
 
           <button
             type="button"
             onClick={() => handleSelectRole('teacher')}
-            className={`p-4 rounded-[12px_18px_14px_16px] text-left border-3 cursor-pointer transition-all ${
+            className={`p-3.5 rounded-[12px_18px_14px_16px] text-left border-3 cursor-pointer transition-all ${
               role === 'teacher'
                 ? 'bg-purple-100 border-zinc-900 shadow-[4px_4px_0px_#18181b] scale-[1.02]'
                 : 'bg-white border-zinc-300 opacity-70 hover:opacity-100'
@@ -122,9 +127,34 @@ export const RoleSwitchModal: React.FC<RoleSwitchModalProps> = ({
                 </span>
               )}
             </div>
-            <div className="font-black text-zinc-900 text-base">คุณครู</div>
-            <div className="text-xs font-semibold text-zinc-600">
-              ตรวจการบ้าน • ดูผลประเมิน • สถิติควิซ
+            <div className="font-black text-zinc-900 text-sm sm:text-base">คุณครู</div>
+            <div className="text-[11px] font-semibold text-zinc-600 mt-0.5">
+              ตรวจงาน • เปิดสนทนาสด • ดูสถิติ
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelectRole('admin')}
+            className={`p-3.5 rounded-[16px_14px_18px_12px] text-left border-3 cursor-pointer transition-all ${
+              role === 'admin'
+                ? 'bg-amber-200 border-zinc-900 shadow-[4px_4px_0px_#18181b] scale-[1.02]'
+                : 'bg-white border-zinc-300 opacity-70 hover:opacity-100'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="w-10 h-10 rounded-lg bg-amber-300 border-2 border-zinc-900 flex items-center justify-center p-1">
+                <DoodleShield className="w-8 h-8" />
+              </div>
+              {role === 'admin' && (
+                <span className="w-6 h-6 rounded-full bg-amber-600 border-2 border-zinc-900 text-white flex items-center justify-center text-xs">
+                  <Check className="w-4 h-4" />
+                </span>
+              )}
+            </div>
+            <div className="font-black text-zinc-900 text-sm sm:text-base">Admin</div>
+            <div className="text-[11px] font-semibold text-zinc-600 mt-0.5">
+              จัดการระบบ • รูปแบบสนทนา • ข้อมูล
             </div>
           </button>
         </div>
@@ -133,7 +163,7 @@ export const RoleSwitchModal: React.FC<RoleSwitchModalProps> = ({
         <div className="space-y-4 bg-amber-50/70 p-4 rounded-[16px_14px_18px_12px] border-2 border-zinc-900/40 mb-6">
           <div>
             <label className="block text-xs font-bold text-zinc-800 mb-1">
-              {role === 'teacher' ? 'ชื่อคุณครู' : 'ชื่อ-นามสกุล นักเรียน'}
+              {role === 'admin' ? 'ชื่อผู้ดูแลระบบ (Admin)' : role === 'teacher' ? 'ชื่อคุณครู' : 'ชื่อ-นามสกุล นักเรียน'}
             </label>
             <input
               type="text"
